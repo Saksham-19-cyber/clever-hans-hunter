@@ -1,0 +1,20 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+# Core ML
+torch==2.3.1+cpu
+torchvision==0.18.1+cpu
+
+# UI
+streamlit==1.36.0
+
+# Vision / plotting
+numpy==1.26.4
+Pillow==10.4.0
+matplotlib==3.9.1
+opencv-python-headless==4.10.0.84
+
+# Utilities
+tqdm==4.66.4
+
+# Testing
+pytest==8.3.2
