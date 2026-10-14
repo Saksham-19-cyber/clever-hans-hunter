@@ -1,89 +1,115 @@
-"""
-measure_memory.py  –  Peak-RAM measurement for Clever Hans Hunter.
+from __future__ import annotations
 
-Measures:
-  1. Peak RAM after loading Level 1 datasets
-  2. Peak RAM after one training run (head_only, 1 epoch)
-  3. Peak RAM after one Grad-CAM call
+import gc
+import json
+import os
+import sys
+import threading
+import time
+from pathlib import Path
 
-Run:
-    python measure_memory.py
+import psutil
 
-Reports numbers in MB.  Streamlit Cloud limit is ~1 GB.
-"""
-from __future__ import annotations 
-
-import gc 
-import sys 
-import tracemalloc 
-from pathlib import Path 
-
-sys .path .insert (0 ,str (Path (__file__ ).parent ))
+sys.path.insert(0, str(Path(__file__).parent))
 
 
-def mb (n_bytes :int )->float :
-    return n_bytes /1024 /1024 
+class PeakRSSMeter:
+    def __init__(self):
+        self.proc = psutil.Process(os.getpid())
+        self.peak_bytes = self.proc.memory_info().rss
+        self._stop = threading.Event()
+        self._thread = None
+
+    def _monitor(self):
+        while not self._stop.is_set():
+            try:
+                rss = self.proc.memory_info().rss
+                if rss > self.peak_bytes:
+                    self.peak_bytes = rss
+            except Exception:
+                pass
+            time.sleep(0.01)
+
+    def start(self):
+        self._stop.clear()
+        self.peak_bytes = self.proc.memory_info().rss
+        self._thread = threading.Thread(target=self._monitor, daemon=True)
+        self._thread.start()
+
+    def stop(self) -> float:
+        self._stop.set()
+        if self._thread:
+            self._thread.join(timeout=1.0)
+        final_rss = self.proc.memory_info().rss
+        if final_rss > self.peak_bytes:
+            self.peak_bytes = final_rss
+        return round(self.peak_bytes / (1024 * 1024), 1)
 
 
-def measure ():
-    results ={}
+def measure():
+    results = {}
+    proc = psutil.Process(os.getpid())
 
+    import streamlit
+    import torch
+    base_rss = round(proc.memory_info().rss / (1024 * 1024), 1)
+    results["import_torch_streamlit_MB"] = base_rss
+    print(f"[1] Post-import RSS: {base_rss:.1f} MB")
 
-    gc .collect ()
-    tracemalloc .start ()
-    from data import build_datasets ,get_normalize_transform ,IMAGE_SIZE 
-    tr_ds ,va_ds ,te_ds =build_datasets (1 ,seed =42 )
-    _ ,peak1 =tracemalloc .get_traced_memory ()
-    tracemalloc .stop ()
-    results ["dataset_load_MB"]=round (mb (peak1 ),1 )
-    print (f"[1] Dataset load peak: {mb (peak1 ):.1f} MB")
+    from data import build_datasets, get_normalize_transform, IMAGE_SIZE
+    meter = PeakRSSMeter()
+    gc.collect()
+    meter.start()
+    tr_ds, va_ds, te_ds = build_datasets(1, seed=42)
+    peak_ds = meter.stop()
+    results["dataset_load_peak_MB"] = peak_ds
+    print(f"[2] Dataset load peak RSS: {peak_ds:.1f} MB")
 
-
-    gc .collect ()
-    tracemalloc .start ()
-    from train import TrainConfig ,run_training 
-    cfg =TrainConfig (
-    finetune_mode ="head_only",optimizer ="adam",
-    learning_rate =1e-3 ,epochs =1 ,
-    loss_fn_name ="cross_entropy",seed =42 ,
+    from train import TrainConfig, run_training
+    cfg = TrainConfig(
+        finetune_mode="head_only",
+        optimizer="adam",
+        learning_rate=1e-3,
+        epochs=1,
+        loss_fn_name="cross_entropy",
+        seed=42,
     )
-    result =run_training (cfg ,tr_ds ,va_ds ,te_ds )
-    _ ,peak2 =tracemalloc .get_traced_memory ()
-    tracemalloc .stop ()
-    results ["training_run_MB"]=round (mb (peak2 ),1 )
-    print (f"[2] Training run peak: {mb (peak2 ):.1f} MB")
+    meter = PeakRSSMeter()
+    gc.collect()
+    meter.start()
+    train_res = run_training(cfg, tr_ds, va_ds, te_ds)
+    peak_train = meter.stop()
+    results["training_run_peak_MB"] = peak_train
+    print(f"[3] Training run peak RSS: {peak_train:.1f} MB")
+
+    from gradcam import make_gradcam_panel
+    norm = get_normalize_transform()
+    raw_img = te_ds[0][0]
+    img_n = norm(raw_img.unsqueeze(0))
+    meter = PeakRSSMeter()
+    gc.collect()
+    meter.start()
+    make_gradcam_panel(train_res.model, img_n)
+    peak_gradcam = meter.stop()
+    results["gradcam_peak_MB"] = peak_gradcam
+    print(f"[4] Grad-CAM peak RSS: {peak_gradcam:.1f} MB")
+
+    overall_peak = max(base_rss, peak_ds, peak_train, peak_gradcam)
+    results["overall_peak_MB"] = overall_peak
+    print(f"\nOverall peak process RSS: {overall_peak:.1f} MB (Budget: 800 MB)")
+
+    budget = 800
+    if overall_peak > budget:
+        print(f"\nWARNING: Peak RSS exceeds {budget} MB budget.")
+    else:
+        print(f"\nOK: Peak RSS is within {budget} MB budget.")
+
+    Path("results").mkdir(exist_ok=True)
+    with open("results/memory.json", "w") as f:
+        json.dump(results, f, indent=2)
+    print("Saved results/memory.json")
+    return results
 
 
-    gc .collect ()
-    tracemalloc .start ()
-    from gradcam import make_gradcam_panel 
-    norm =get_normalize_transform ()
-    raw_img =te_ds [0 ][0 ]
-    img_n =norm (raw_img .unsqueeze (0 ))
-    make_gradcam_panel (result .model ,img_n )
-    _ ,peak3 =tracemalloc .get_traced_memory ()
-    tracemalloc .stop ()
-    results ["gradcam_MB"]=round (mb (peak3 ),1 )
-    print (f"[3] Grad-CAM peak:     {mb (peak3 ):.1f} MB")
-
-    total_peak =max (peak1 ,peak2 ,peak3 )
-    results ["overall_peak_MB"]=round (mb (total_peak ),1 )
-    print (f"\nOverall peak: {mb (total_peak ):.1f} MB  (Streamlit Cloud budget: ~1000 MB)")
-
-    budget =800 
-    if mb (total_peak )>budget :
-        print (f"\nWARNING: Peak exceeds {budget } MB budget.")
-        print ("Recommended reduction: lower N_TRAIN/N_VAL/N_TEST in data.py or use IMAGE_SIZE=48.")
-    else :
-        print (f"\nOK: Well within {budget } MB budget.")
-
-    import json 
-    Path ("results").mkdir (exist_ok =True )
-    with open ("results/memory.json","w")as f :
-        json .dump (results ,f ,indent =2 )
-    print ("Saved results/memory.json")
-    return results 
-
-
-if __name__ =="__main__":
-    measure ()
+if __name__ == "__main__":
+    measure()

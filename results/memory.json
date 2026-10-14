@@ -1,6 +1,7 @@
 {
-  "dataset_load_MB": 663.3,
-  "training_run_MB": 1.2,
-  "gradcam_MB": 1.4,
-  "overall_peak_MB": 663.3
+  "import_torch_streamlit_MB": 210.8,
+  "dataset_load_peak_MB": 815.1,
+  "training_run_peak_MB": 639.9,
+  "gradcam_peak_MB": 367.4,
+  "overall_peak_MB": 815.1
 }
