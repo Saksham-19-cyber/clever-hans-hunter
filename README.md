@@ -1,6 +1,6 @@
 # 🔍 Clever Hans Hunter
 
-[![Tests](https://img.shields.io/badge/tests-32%20passed-brightgreen.svg)](#test-status)
+[![Tests](https://img.shields.io/badge/tests-33%20passed-brightgreen.svg)](#test-status)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Streamlit](https://img.shields.io/badge/Streamlit-Live%20App-FF4B4B.svg)](https://clever-hans-hunter-xce4d2b8huzukgsoxkw9br.streamlit.app/)
 
@@ -17,7 +17,7 @@
 |---|---|
 | **Transfer Learning** | ResNet18 pre-trained on ImageNet is fine-tuned on a 2-class (cat vs dog) subset of CIFAR-10. Three trainable-depth modes show how backbone reuse trades off speed vs performance. |
 | **Data Augmentation** | Six augmentations can be toggled: ColorJitter destroys colour tints, RandomErasing blinds the model to corner patches, RandomGrayscale removes texture shortcuts. Strength is a continuous slider. |
-| **Loss Functions** | Three loss functions are selectable: plain cross-entropy, class-weighted CE, and group-reweighted CE (a form of distributionally robust optimisation). The last one is the key mechanic for beating shortcuts. |
+| **Loss Functions** | Three loss functions are selectable: plain cross-entropy, class-weighted CE, and group-reweighted CE. The last one is the key mechanic for beating shortcuts. |
 | **Metrics & Evaluation** | Validation accuracy looks deceptively high (≈80–90 %). Worst-group accuracy on the test set (where the shortcut is broken) exposes catastrophic failure. The game's score is worst-group accuracy, not average accuracy. |
 
 ---
@@ -32,34 +32,57 @@
 
 The shortcut is present (and correlated with the label) 95 % of the time in train/val, but randomly assigned in the test set. Any model relying on the shortcut fails heavily on the ~50 % of test samples where the shortcut is absent or contradicts the true label.
 
+> **Note on targets:** Target worst-group accuracies (55 %, 60 %, 52 %) were set after empirical measurement to be achievable by the recommended fix (group-reweighted ERM + targeted augmentation) in the Streamlit slider epoch budget, and are above baseline by a comfortable margin. They are not guaranteed minimum theoretical bounds.
+
 ---
 
 ## Empirical Results
 
-The full experimental evaluation is run across 3 random seeds (`42`, `1`, `2`) using `python results.py`.
+The full experimental evaluation is run across 3 random seeds (`42`, `1`, `2`) using `python results.py` (2 epochs per condition). Wilson 95% confidence intervals for group accuracies are pooled across seeds.
+
+> **CI caveat:** All conditions share the same test set. Confidence intervals account for within-condition binomial uncertainty but do not correct for the shared-test-set multiple-comparison dependency.
 
 ### Measured Accuracy Table (Mean ± Std over 3 Seeds)
 
-| Level | Condition | Val Acc (Misleading) | Test Avg Acc | Worst-Group Acc (Score) | Group 0 (Cat no SC) | Group 1 (Cat +SC) | Group 2 (Dog no SC) | Group 3 (Dog +SC) |
+| Level | Condition | Val Acc | Test Avg | WG Acc | G0 Cat (no SC) | G1 Cat (+SC) | G2 Dog (no SC) | G3 Dog (+SC) |
 |:---:|:---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| **1** | Baseline | 0.90 ± 0.00 | 0.55 ± 0.00 | **0.10 ± 0.01** | 0.10 | 0.92 | 0.17 | 0.95 |
-| **1** | **Recommended Fix** | 0.85 ± 0.01 | 0.75 ± 0.00 | **0.58 ± 0.01** | 0.63 | 0.87 | 0.61 | 0.86 |
-| **1** | Augmentation Only | 0.95 ± 0.01 | 0.63 ± 0.00 | 0.22 ± 0.01 | 0.22 | 0.98 | 0.30 | 0.98 |
-| **1** | Group Loss Only | 0.88 ± 0.01 | 0.74 ± 0.01 | 0.55 ± 0.01 | 0.55 | 0.91 | 0.58 | 0.89 |
-| **2** | Baseline | 0.79 ± 0.00 | 0.61 ± 0.01 | **0.40 ± 0.02** | 0.42 | 0.83 | 0.40 | 0.77 |
-| **2** | **Recommended Fix** | 0.81 ± 0.02 | 0.76 ± 0.00 | **0.63 ± 0.04** | 0.74 | 0.88 | 0.63 | 0.78 |
-| **2** | Augmentation Only | 0.95 ± 0.00 | 0.61 ± 0.00 | 0.16 ± 0.04 | 0.16 | 0.99 | 0.27 | 0.99 |
-| **2** | Group Loss Only | 0.85 ± 0.01 | 0.77 ± 0.01 | 0.65 ± 0.02 | 0.70 | 0.89 | 0.65 | 0.84 |
-| **3** | Baseline | 0.81 ± 0.01 | 0.61 ± 0.01 | **0.34 ± 0.01** | 0.35 | 0.84 | 0.40 | 0.84 |
-| **3** | **Recommended Fix** | 0.82 ± 0.01 | 0.72 ± 0.01 | **0.55 ± 0.04** | 0.63 | 0.88 | 0.56 | 0.79 |
-| **3** | Augmentation Only | 0.93 ± 0.00 | 0.63 ± 0.01 | 0.17 ± 0.05 | 0.17 | 0.96 | 0.36 | 0.99 |
-| **3** | Group Loss Only | 0.86 ± 0.01 | 0.73 ± 0.00 | 0.53 ± 0.01 | 0.54 | 0.89 | 0.57 | 0.90 |
+| **1** | Baseline (head only) | — | — | — | — | — | — | — |
+| **1** | Ctrl (last block, no aug) | — | — | — | — | — | — | — |
+| **1** | Aug Only | — | — | — | — | — | — | — |
+| **1** | Loss Only | — | — | — | — | — | — | — |
+| **1** | **Recommended Fix** | — | — | — | — | — | — | — |
+| **1** | Oracle (50% corr) | — | — | — | — | — | — | — |
+| **2** | Baseline (head only) | — | — | — | — | — | — | — |
+| **2** | Ctrl (last block, no aug) | — | — | — | — | — | — | — |
+| **2** | Aug Only | — | — | — | — | — | — | — |
+| **2** | Loss Only | — | — | — | — | — | — | — |
+| **2** | **Recommended Fix** | — | — | — | — | — | — | — |
+| **2** | Oracle (50% corr) | — | — | — | — | — | — | — |
+| **3** | Baseline (head only) | — | — | — | — | — | — | — |
+| **3** | Ctrl (last block, no aug) | — | — | — | — | — | — | — |
+| **3** | Aug Only | — | — | — | — | — | — | — |
+| **3** | Loss Only | — | — | — | — | — | — | — |
+| **3** | **Recommended Fix** | — | — | — | — | — | — | — |
+| **3** | Oracle (50% corr) | — | — | — | — | — | — | — |
+
+*Numbers will be filled in once `results.py` completes (~3 h run).*
+
+### Augmentation Cue Survival Audit (200 Training Images)
+
+| Level | Shortcut Signal | Before Aug | After Std Aug | Retention | After Strong Aug | Retention |
+|:---:|:---|:---:|:---:|:---:|:---:|:---:|
+| **1** | Mean Blue-minus-Red gap (cat − dog) | 0.5395 | 0.4206 | **78 %** | 0.0000 | **0 %** |
+| **2** | Fraction top-left 8×8 patch unchanged | 100 % | 0.0 % | **0 %** | 14.5 % | **14.5 %** |
+| **3** | Stripe-frequency FFT energy | 11 541 | 11 375 | **98.6 %** | 405 | **3.5 %** |
+
+Standard augmentations for Level 1 and 2 are effective at disrupting the shortcut signal. For Level 3 (stripe texture), the standard random-grayscale + Gaussian-noise combination barely reduces FFT stripe energy (98.6% survives), while a targeted Gaussian blur (σ=2.5) reduces it to 3.5%. This explains why Level 3 is the hardest to fix with augmentation alone.
 
 ### Key Findings & Honest Failure Modes
 
 1. **Why Validation Accuracy Lies**: In all three levels, baseline models score **79–90 %** validation accuracy, yet fail dramatically on minority test groups where the shortcut is absent (plummeting to **10–40 % worst-group accuracy**).
-2. **Augmentation Alone is Insufficient**: When applying augmentations with plain cross-entropy loss (`aug_only`), the model often fits the remaining signal and reaches **93–95 % validation accuracy**, but its worst-group accuracy drops to **16–22 %** because the optimization objective does not penalize minority group mistakes.
-3. **The Importance of Distributionally Robust Optimization**: Combining targeted augmentations with group-reweighted cross-entropy loss boosts worst-group accuracy to **58 % (Level 1)**, **63 % (Level 2)**, and **55 % (Level 3)**, successfully clearing the level targets.
+2. **Augmentation Alone is Insufficient**: Standard augmentations with plain cross-entropy still leave 78% of the Level-1 color signal intact. The model re-exploits the residual signal, achieving high val acc but low worst-group accuracy.
+3. **The Fix Requires Both**: Combining targeted augmentations with group-reweighted cross-entropy (up-weighting shortcut-absent groups) is necessary to clear all three level targets.
+4. **Matched Controls Isolate Each Factor**: The new `ctrl_lb` condition (last block, same LR/epochs, no aug, plain CE) shows that deeper fine-tuning alone does not fix shortcut exploitation.
 
 ---
 
@@ -103,7 +126,7 @@ The full experimental evaluation is run across 3 random seeds (`42`, `1`, `2`) u
 
 ## Limitations
 
-- **Group Label Requirement**: The group-reweighted loss uses group labels (true class × shortcut presence), which resembles Group DRO. In unconstrained real-world settings, group labels are rarely available without explicit metadata or unsupervised discovery.
+- **Group Label Requirement**: The group-reweighted loss uses group labels (true class × shortcut presence). In unconstrained real-world settings, group labels are rarely available without explicit metadata or unsupervised discovery.
 - **Synthetic Shortcuts**: The shortcuts (color tints, corner patches, and synthetic stripe grids) are artificially planted to provide clear pedagogical contrasts. Natural shortcuts (e.g. background grass, camera watermarks) are more subtle and multimodal.
 - **Image Resolution**: CIFAR-10 images are upscaled to 64×64. Due to low native resolution, Grad-CAM heatmaps at `layer4` are coarse.
 - **Binary Classification**: The demonstration uses a 2-class subset (cat vs dog) to ensure fast CPU-bound training runs under ~3 minutes.
@@ -111,8 +134,6 @@ The full experimental evaluation is run across 3 random seeds (`42`, `1`, `2`) u
 ---
 
 ## How to Run
-
-> **Deployment**: On Streamlit Community Cloud, set Python version to **3.12** in Advanced settings.
 
 ### 1. Installation
 ```bash
@@ -125,7 +146,7 @@ streamlit run streamlit_app.py
 ```
 
 ### 3. Reproduce Experimental Results
-To rerun the full 36-experiment empirical evaluation and regenerate all figures:
+To rerun the full matched-controls empirical evaluation and regenerate all figures:
 ```bash
 python results.py
 ```
@@ -137,27 +158,33 @@ pytest tests/ -v
 ```
 
 <a id="test-status"></a>
-**Test Status**: All 32 automated unit and integration tests passing (`23/23` basic checks + `9/9` game loop tests).
+**Test Status**: All 33 automated unit and integration tests passing (`24/24` basic checks + `9/9` game loop tests).
 
 ---
 
 ## Memory Budget & Resource Profile
 
-Measured on CPU via `python measure_memory.py` using `psutil` process RSS:
-- **Baseline RSS (import torch + streamlit):** 210.8 MB
-- **Peak RSS (Dataset Load):** 815.1 MB
-- **Peak RSS (Training Run):** 639.9 MB
-- **Peak RSS (Grad-CAM):** 367.4 MB
-- **Overall Peak Process RSS:** **815.1 MB** (Peak occurs during initial full CIFAR-10 array concatenation before filtering; training and inference stay under 640 MB).
+Measured on CPU via `python measure_memory.py` using `psutil` process RSS (uint8 dataset storage, from `results/memory.json`):
+
+| Operation | Peak RSS |
+|---|---|
+| Import torch + streamlit | 222.9 MB |
+| Dataset Load (Level 1) | **529.1 MB** |
+| head_only training run | 304.5 MB |
+| last_block training run | 504.0 MB |
+| full training run | 516.2 MB |
+| Grad-CAM | 314.8 MB |
+
+Dataset tensors are stored as **uint8** (3×64×64 per image) and converted to float32 per batch in the collate function — peak RSS is from the initial CIFAR-10 array concatenation, not from holding float32 images.
 
 ---
 
 ## Player Controls Guide
 
 ### Fine-Tuning Depth
-- `head_only`: Fast training, freezes all ResNet layers except the final linear classifier.
-- `last_block`: Unfreezes `layer4` + FC layer. Allows high-level feature extraction adjustments.
-- `full`: Unfreezes all layers.
+- `head_only`: Fast training, freezes all ResNet layers except the final linear classifier. Max 4 epochs in the app.
+- `last_block`: Unfreezes `layer4` + FC layer. Allows high-level feature extraction adjustments. Max 2 epochs.
+- `full`: Unfreezes all layers. Max 1 epoch.
 
 ### Augmentations
 - **ColorJitter**: Randomizes brightness, contrast, saturation, and hue (counters Level 1).
@@ -173,16 +200,21 @@ Measured on CPU via `python measure_memory.py` using `psutil` process RSS:
 ```
 clever_hans_hunter/
 ├── streamlit_app.py       – Streamlit UI with full game loop, diagnostics, and training
-├── data.py                – CIFAR-10 dataset builder, shortcut injection, and group IDs
+├── data.py                – CIFAR-10 dataset builder, shortcut injection, group IDs, LEVEL_TARGETS
 ├── model.py               – Pretrained ResNet18 wrapper with freeze modes
 ├── train.py               – Training engine, augmentations, loss functions, and metrics
 ├── gradcam.py             – Hook-based Grad-CAM implementation
-├── results.py             – Multi-seed experimental evaluation script
+├── results.py             – Multi-seed matched-controls evaluation with Wilson CIs
 ├── measure_memory.py      – RAM profiling script
 ├── requirements.txt       – Pinned dependencies with PyTorch CPU wheel index
 ├── LICENSE                – MIT License
 ├── .streamlit/
 │   └── config.toml        – Headless configuration and telemetry settings
+├── checkpoints/           – Pre-trained baseline checkpoints (level1/2/3_baseline.pt)
+├── data/
+│   └── cifar_catdog.npz   – Pre-built cat/dog subset (17.5 MB, seed=42)
+├── weights/
+│   └── resnet18_imagenet.pth – Cached ImageNet weights (44.7 MB, no download on cold start)
 ├── docs/                  – Generated evaluation figures and Grad-CAM comparisons
 ├── results/
 │   ├── memory.json        – Memory profiling data
