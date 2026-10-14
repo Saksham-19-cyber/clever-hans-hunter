@@ -33,6 +33,7 @@ sys .path .insert (0 ,str (Path (__file__ ).parent ))
 from data import (
 CLASS_NAMES ,DATA_ROOT ,IMAGE_SIZE ,build_datasets ,get_normalize_transform ,
 shortcut_correlation ,ShortcutDataset ,normalize_tensor ,tensor_to_display_pil ,
+LEVEL_TARGETS ,make_dataloaders ,
 )
 from gradcam import _tensor_to_pil ,make_gradcam_panel 
 from model import build_model 
@@ -46,8 +47,6 @@ ROOT =Path (__file__ ).parent
 CACHE_DIR =ROOT /"cache"
 CHECKPOINTS_DIR =ROOT /"checkpoints"
 SEED =42 
-
-LEVEL_TARGETS ={1 :0.55 ,2 :0.60 ,3 :0.52 }
 
 
 LEVEL_SHORTCUTS ={
@@ -126,50 +125,49 @@ def cached_datasets(level: int):
     return result
 
 
-@st.cache_resource(show_spinner="Loading precomputed baseline...")
+@st.cache_resource(show_spinner="Evaluating baseline on current test set...")
 def cached_baseline (level :int ):
+    tr ,va ,te =cached_datasets (level )
     ckpt_path =CHECKPOINTS_DIR /f"level{level }_baseline.pt"
+    model =build_model (finetune_mode ="head_only",pretrained =True )
+    history =[]
     if ckpt_path .exists ():
         try :
             ckpt =torch .load (ckpt_path ,map_location ="cpu",weights_only =False )
-            model =build_model (finetune_mode ="head_only",pretrained =True )
             if "fc_state_dict"in ckpt :
                 model .fc .load_state_dict (ckpt ["fc_state_dict"])
             elif "model_state_dict"in ckpt :
                 model .load_state_dict (ckpt ["model_state_dict"])
-            model .eval ()
-            return TrainResult (
-            val_acc =ckpt ["val_acc"],
-            test_avg_acc =ckpt ["test_avg_acc"],
-            worst_group_acc =ckpt ["worst_group_acc"],
-            group_accs =ckpt ["group_accs"],
-            confusion_matrix =np .array (ckpt ["confusion_matrix"]),
-            history =ckpt ["history"],
-            model =model ,
-            suspicious =ckpt .get ("suspicious",[]),
-            )
+            history =ckpt .get ("history",[])
         except Exception :
             pass 
+    model .eval ()
 
-    try :
-        CACHE_DIR .mkdir (exist_ok =True )
-    except Exception :
-        pass 
-    cp =CACHE_DIR /f"level{level }_baseline.pkl"
-    if cp .exists ():
-        try :
-            with open (cp ,"rb")as f :
-                return pickle .load (f )
-        except Exception :
-            pass 
-    tr ,va ,te =cached_datasets (level )
-    result =train_baseline (level ,tr ,va ,te )
-    try :
-        with open (cp ,"wb")as f :
-            pickle .dump (result ,f )
-    except Exception :
-        pass 
-    return result 
+    _ ,val_loader ,test_loader =make_dataloaders (tr ,va ,te ,batch_size =64 )
+    val_acc ,*_ =evaluate (model ,val_loader ,"cpu")
+    test_acc ,test_preds ,test_labels ,test_groups ,test_confs =evaluate (model ,test_loader ,"cpu")
+
+    group_accs =_compute_group_accs (test_preds ,test_labels ,test_groups )
+    valid_accs =[v for v in group_accs .values ()if not np .isnan (v )]
+    worst_group =min (valid_accs )if valid_accs else 0.0 
+    cm =_confusion_matrix (test_preds ,test_labels )
+
+    suspicious =[]
+    for i ,(p ,l ,c )in enumerate (zip (test_preds ,test_labels ,test_confs )):
+        if p !=l :
+            suspicious .append ((i ,l ,p ,c ))
+    suspicious .sort (key =lambda x :-x [3 ])
+
+    return TrainResult (
+    val_acc =val_acc ,
+    test_avg_acc =test_acc ,
+    worst_group_acc =worst_group ,
+    group_accs =group_accs ,
+    confusion_matrix =cm ,
+    history =history ,
+    model =model ,
+    suspicious =suspicious [:20 ],
+    )
 
 
 def _init_state ():
@@ -418,6 +416,14 @@ def main ():
 
     st .markdown ("")
 
+    flash =st .session_state .pop ("flash_message",None )
+    if flash :
+        if flash .get ("balloons"):
+            st .balloons ()
+        if flash .get ("type")=="success":
+            st .success (flash .get ("text"))
+        else :
+            st .info (flash .get ("text"))
 
     tab_diag ,tab_train ,tab_reveal =st .tabs (["Diagnose","Train","Reveal"])
 
@@ -527,7 +533,19 @@ def main ():
             options =[1e-5 ,5e-5 ,1e-4 ,5e-4 ,1e-3 ,3e-3 ,1e-2 ,3e-2 ,1e-1 ],
             value =1e-3 ,key ="lr",
             )
-            epochs =st .slider ("Epochs (capped at 4 for CPU budget)",1 ,4 ,3 ,key ="epochs")
+            mode_max_epochs ={"head_only":4 ,"last_block":2 ,"full":1 }
+            max_ep =mode_max_epochs .get (ft_mode ,4 )
+            epochs =st .slider (
+            f"Epochs (max {max_ep } for {ft_mode })",
+            min_value =1 ,
+            max_value =max_ep ,
+            value =min (2 ,max_ep ),
+            key =f"epochs_{ft_mode }",
+            )
+            st .caption (
+            f"Capped at {max_ep } epoch{'s' if max_ep >1 else ''} for {ft_mode } "
+            f"to finish in ~3 minutes on 2 CPU threads."
+            )
 
         with tc2 :
             st .markdown ("**Loss Function**")
@@ -543,7 +561,7 @@ def main ():
             )
             st .caption (
             "Group-reweighted CE uses group labels (shortcut present/absent) "
-            "to up-weight hard samples, forcing the model to learn real features."
+            "to up-weight rare groups (shortcut-absent), forcing the model to learn real features (group-reweighted ERM)."
             )
 
         with tc3 :
@@ -594,12 +612,17 @@ def main ():
 
             if result .worst_group_acc >=LEVEL_TARGETS [level ]:
                 st .session_state .unlocked .add (level )
-                st .balloons ()
-                st .success (f"Level {level } Complete! "
-                f"Worst-group acc = {result .worst_group_acc :.1%}")
+                st .session_state ["flash_message"]={
+                "type":"success",
+                "balloons":True ,
+                "text":f"Level {level } Complete! Worst-group acc = {result .worst_group_acc :.1%} (target {LEVEL_TARGETS [level ]:.0%})",
+                }
             else :
-                st .info (f"Worst-group acc = {result .worst_group_acc :.1%} "
-                f"(target {LEVEL_TARGETS [level ]:.0%}) -- keep going!")
+                st .session_state ["flash_message"]={
+                "type":"info",
+                "balloons":False ,
+                "text":f"Worst-group acc = {result .worst_group_acc :.1%} (target {LEVEL_TARGETS [level ]:.0%}) -- keep going!",
+                }
             st .rerun ()
 
 

@@ -113,7 +113,7 @@ def class_weighted_ce_loss (logits ,labels ,groups =None ,group_weights =None ):
 
 def group_reweighted_ce_loss (logits ,labels ,groups ,group_weights ):
     """
-    Group-reweighted cross-entropy (DRO-lite).
+    Group-reweighted cross-entropy (group-reweighted ERM).
 
     group_weights : 4-element tensor, one weight per group id.
     Each sample loss is multiplied by the weight of its group, so

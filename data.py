@@ -34,6 +34,8 @@ SHORTCUT_CORR_TEST = 0.50
 
 DATA_ROOT = Path("./cifar_data")
 
+LEVEL_TARGETS = {1: 0.55, 2: 0.60, 3: 0.52}
+
 
 def _blue_tint (img :torch .Tensor ,strength :float =0.25 )->torch .Tensor :
     """Add a blue tint (level-1 shortcut for class 0 / cat)."""
