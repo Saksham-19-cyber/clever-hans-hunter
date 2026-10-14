@@ -174,6 +174,9 @@ def _resize_to_tensor (arr :np .ndarray ,size :int )->torch .Tensor :
     return T .ToTensor ()(pil )
 
 
+LOCAL_CATDOG_PATH = Path(__file__).parent / "data" / "cifar_catdog.npz"
+
+
 def build_datasets(
     level: int,
     seed: int = 42,
@@ -185,20 +188,24 @@ def build_datasets(
     rng = random.Random(seed)
     np.random.seed(seed)
 
-    all_imgs, all_labels = _load_raw_cifar(data_root)
-
-    cat_idx = np.where(all_labels == CIFAR_CAT)[0]
-    dog_idx = np.where(all_labels == CIFAR_DOG)[0]
-
-    rng_np = np.random.RandomState(seed)
-    rng_np.shuffle(cat_idx)
-    rng_np.shuffle(dog_idx)
-
     n_tr, n_va, n_vt, n_te = N_TRAIN, N_VAL, N_VAL_TUNE, N_TEST
     total = n_tr + n_va + n_vt + n_te
 
-    cat_idx = cat_idx[:total]
-    dog_idx = dog_idx[:total]
+    if seed == 42 and LOCAL_CATDOG_PATH.is_file():
+        data = np.load(LOCAL_CATDOG_PATH)
+        cat_imgs = data["cat_imgs"]
+        dog_imgs = data["dog_imgs"]
+    else:
+        all_imgs, all_labels = _load_raw_cifar(data_root)
+        cat_idx = np.where(all_labels == CIFAR_CAT)[0]
+        dog_idx = np.where(all_labels == CIFAR_DOG)[0]
+        rng_np = np.random.RandomState(seed)
+        rng_np.shuffle(cat_idx)
+        rng_np.shuffle(dog_idx)
+        cat_idx = cat_idx[:total]
+        dog_idx = dog_idx[:total]
+        cat_imgs = all_imgs[cat_idx]
+        dog_imgs = all_imgs[dog_idx]
 
     train_corr = SHORTCUT_CORR_TEST if oracle else SHORTCUT_CORR_TRAIN
 
@@ -213,12 +220,11 @@ def build_datasets(
     for split_name, (sl, corr) in splits.items():
         images, labels, group_ids = [], [], []
 
-        for cls_idx, (cls_indices, cls_label) in enumerate([
-            (cat_idx[sl], 0),
-            (dog_idx[sl], 1),
+        for cls_idx, (cls_arr, cls_label) in enumerate([
+            (cat_imgs[sl], 0),
+            (dog_imgs[sl], 1),
         ]):
-            for raw_idx in cls_indices:
-                raw_img = all_imgs[raw_idx]
+            for raw_img in cls_arr:
                 tensor = _resize_to_tensor(raw_img, image_size)
 
                 correlated = rng.random() < corr
