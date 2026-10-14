@@ -1,7 +1,7 @@
 __pycache__/
 *.pyc
 cifar_data/
-.venv/
+.venv*/
 .env
 .DS_Store
 *.egg-info/
