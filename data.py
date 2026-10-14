@@ -252,6 +252,25 @@ def get_normalize_transform():
     return T.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD)
 
 
+def to_float_tensor(imgs: torch.Tensor) -> torch.Tensor:
+    if imgs.dtype == torch.uint8:
+        return imgs.float() / 255.0
+    return imgs.float() if not imgs.is_floating_point() else imgs
+
+
+def normalize_tensor(imgs: torch.Tensor) -> torch.Tensor:
+    imgs_float = to_float_tensor(imgs)
+    return get_normalize_transform()(imgs_float)
+
+
+def tensor_to_display_pil(img: torch.Tensor) -> Image.Image:
+    if img.ndim == 4:
+        img = img[0]
+    img_float = to_float_tensor(img)
+    arr = (img_float.detach().cpu().numpy().transpose(1, 2, 0) * 255.0).clip(0, 255).astype(np.uint8)
+    return Image.fromarray(arr)
+
+
 def make_dataloaders(
     train_ds: ShortcutDataset,
     val_ds: ShortcutDataset,
@@ -265,8 +284,7 @@ def make_dataloaders(
     def collate_with_train_aug(batch):
         imgs, lbls, gids = zip(*batch)
         imgs = torch.stack(imgs)
-        if imgs.dtype == torch.uint8:
-            imgs = imgs.float() / 255.0
+        imgs = to_float_tensor(imgs)
         if train_transform is not None:
             imgs = train_transform(imgs)
         imgs = normalize(imgs)
@@ -275,8 +293,7 @@ def make_dataloaders(
     def collate_eval(batch):
         imgs, lbls, gids = zip(*batch)
         imgs = torch.stack(imgs)
-        if imgs.dtype == torch.uint8:
-            imgs = imgs.float() / 255.0
+        imgs = to_float_tensor(imgs)
         imgs = normalize(imgs)
         return imgs, torch.tensor(lbls, dtype=torch.long), torch.tensor(gids, dtype=torch.long)
 
