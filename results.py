@@ -42,7 +42,7 @@ import torch
 
 sys .path .insert (0 ,str (Path (__file__ ).parent ))
 
-from data import build_datasets ,get_normalize_transform ,CLASS_NAMES 
+from data import build_datasets ,get_normalize_transform ,normalize_tensor ,CLASS_NAMES 
 from gradcam import make_gradcam_panel ,_tensor_to_pil 
 from train import TrainConfig ,run_training ,train_baseline 
 
@@ -280,14 +280,14 @@ test_ds ,docs_dir :Path ):
         sample_idx =0 
 
     raw_img ,true_lbl ,group_id =test_ds [sample_idx ]
-    img_norm =norm (raw_img .unsqueeze (0 ))
+    img_norm =normalize_tensor (raw_img .unsqueeze (0 ))
 
     for tag ,result in [("before",before_result ),("after",after_result )]:
         if result is None or result .model is None :
             continue 
         try :
             orig ,heat ,overlay ,pred_cls ,conf =make_gradcam_panel (
-            result .model ,img_norm 
+            result .model ,img_norm ,raw_img =raw_img 
             )
             fig ,axes =plt .subplots (1 ,3 ,figsize =(9 ,3 ))
             for ax ,img ,title in zip (

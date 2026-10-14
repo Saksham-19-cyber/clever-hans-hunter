@@ -32,7 +32,7 @@ sys .path .insert (0 ,str (Path (__file__ ).parent ))
 
 from data import (
 CLASS_NAMES ,DATA_ROOT ,IMAGE_SIZE ,build_datasets ,get_normalize_transform ,
-shortcut_correlation ,ShortcutDataset ,
+shortcut_correlation ,ShortcutDataset ,normalize_tensor ,tensor_to_display_pil ,
 )
 from gradcam import _tensor_to_pil ,make_gradcam_panel 
 from model import build_model 
@@ -467,12 +467,11 @@ def main ():
         with gc2 :
             if run_cam :
                 chosen_ds =ds_map [cam_split ]
-                norm =get_normalize_transform ()
                 raw_img ,true_lbl ,group_id =chosen_ds [cam_idx ]
-                img_norm =norm (raw_img .unsqueeze (0 ))
+                img_norm =normalize_tensor (raw_img .unsqueeze (0 ))
                 with st .spinner ("Running Grad-CAM ..."):
                     try :
-                        orig_pil ,heat_pil ,ov_pil ,pred_cls ,conf =make_gradcam_panel (result .model ,img_norm )
+                        orig_pil ,heat_pil ,ov_pil ,pred_cls ,conf =make_gradcam_panel (result .model ,img_norm ,raw_img =raw_img )
                         s1 ,s2 ,s3 =st .columns (3 )
                         s1 .image (orig_pil ,caption ="Original",use_container_width =True )
                         s2 .image (heat_pil ,caption ="Heatmap",use_container_width =True )
@@ -495,7 +494,7 @@ def main ():
                 with cols [i %5 ]:
                     if idx <len (test_ds ):
                         raw_img =test_ds [idx ][0 ]
-                        pil =_tensor_to_pil (raw_img ).resize ((96 ,96 ))
+                        pil =tensor_to_display_pil (raw_img ).resize ((96 ,96 ))
                         st .image (pil ,
                         caption =f"T:{CLASS_NAMES [true_lbl ]} "
                         f"P:{CLASS_NAMES [pred_lbl ]} ({conf :.0%})",
