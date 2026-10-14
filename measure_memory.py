@@ -66,7 +66,8 @@ def measure():
     print(f"[2] Dataset load peak RSS: {peak_ds:.1f} MB")
 
     from train import TrainConfig, run_training
-    cfg = TrainConfig(
+
+    cfg_head = TrainConfig(
         finetune_mode="head_only",
         optimizer="adam",
         learning_rate=1e-3,
@@ -77,24 +78,58 @@ def measure():
     meter = PeakRSSMeter()
     gc.collect()
     meter.start()
-    train_res = run_training(cfg, tr_ds, va_ds, te_ds)
-    peak_train = meter.stop()
-    results["training_run_peak_MB"] = peak_train
-    print(f"[3] Training run peak RSS: {peak_train:.1f} MB")
+    res_head = run_training(cfg_head, tr_ds, va_ds, te_ds)
+    peak_head = meter.stop()
+    results["head_only_peak_MB"] = peak_head
+    print(f"[3] head_only peak RSS: {peak_head:.1f} MB")
+
+    cfg_last = TrainConfig(
+        finetune_mode="last_block",
+        optimizer="adam",
+        learning_rate=5e-4,
+        epochs=1,
+        loss_fn_name="cross_entropy",
+        seed=42,
+    )
+    meter = PeakRSSMeter()
+    gc.collect()
+    meter.start()
+    res_last = run_training(cfg_last, tr_ds, va_ds, te_ds)
+    peak_last = meter.stop()
+    results["last_block_peak_MB"] = peak_last
+    print(f"[4] last_block peak RSS: {peak_last:.1f} MB")
+
+    cfg_full = TrainConfig(
+        finetune_mode="full",
+        optimizer="adam",
+        learning_rate=1e-4,
+        epochs=1,
+        loss_fn_name="cross_entropy",
+        seed=42,
+    )
+    meter = PeakRSSMeter()
+    gc.collect()
+    meter.start()
+    res_full = run_training(cfg_full, tr_ds, va_ds, te_ds)
+    peak_full = meter.stop()
+    results["full_peak_MB"] = peak_full
+    print(f"[5] full peak RSS: {peak_full:.1f} MB")
 
     from gradcam import make_gradcam_panel
     norm = get_normalize_transform()
     raw_img = te_ds[0][0]
+    if raw_img.dtype == torch.uint8:
+        raw_img = raw_img.float() / 255.0
     img_n = norm(raw_img.unsqueeze(0))
     meter = PeakRSSMeter()
     gc.collect()
     meter.start()
-    make_gradcam_panel(train_res.model, img_n)
+    make_gradcam_panel(res_head.model, img_n)
     peak_gradcam = meter.stop()
     results["gradcam_peak_MB"] = peak_gradcam
-    print(f"[4] Grad-CAM peak RSS: {peak_gradcam:.1f} MB")
+    print(f"[6] Grad-CAM peak RSS: {peak_gradcam:.1f} MB")
 
-    overall_peak = max(base_rss, peak_ds, peak_train, peak_gradcam)
+    overall_peak = max(base_rss, peak_ds, peak_head, peak_last, peak_full, peak_gradcam)
     results["overall_peak_MB"] = overall_peak
     print(f"\nOverall peak process RSS: {overall_peak:.1f} MB (Budget: 800 MB)")
 
