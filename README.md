@@ -2,12 +2,12 @@
 
 [![Tests](https://img.shields.io/badge/tests-32%20passed-brightgreen.svg)](#test-status)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Streamlit](https://img.shields.io/badge/Streamlit-1.36+-FF4B4B.svg)](https://streamlit.io)
+[![Streamlit](https://img.shields.io/badge/Streamlit-Live%20App-FF4B4B.svg)](https://clever-hans-hunter-xce4d2b8huzukgsoxkw9br.streamlit.app/)
 
 > A gamified computer-vision project for deep-learning courses.  
 > **You are handed a classifier that achieves high validation accuracy (up to 90–95 %) but fails in the real world because it learned a planted shortcut — your job is to diagnose and fix it.**
 >
-> 🚀 **[Live Demo](TODO_STREAMLIT_URL)**
+> 🚀 **[Live Demo](https://clever-hans-hunter-xce4d2b8huzukgsoxkw9br.streamlit.app/)**
 
 ---
 
