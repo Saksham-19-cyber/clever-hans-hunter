@@ -112,6 +112,8 @@ The full experimental evaluation is run across 3 random seeds (`42`, `1`, `2`) u
 
 ## How to Run
 
+> **Deployment**: On Streamlit Community Cloud, set Python version to **3.12** in Advanced settings.
+
 ### 1. Installation
 ```bash
 pip install -r requirements.txt
@@ -141,11 +143,12 @@ pytest tests/ -v
 
 ## Memory Budget & Resource Profile
 
-Measured on CPU via `python measure_memory.py` using `tracemalloc`:
-- **Peak RAM (Dataset Load):** ~663 MB
-- **Peak RAM (Training Run):** ~1.2 MB
-- **Peak RAM (Grad-CAM):** ~1.4 MB
-- **Overall Peak:** **~663 MB** (well under the 800 MB constraint for 1 GB free-tier instances like Streamlit Cloud).
+Measured on CPU via `python measure_memory.py` using `psutil` process RSS:
+- **Baseline RSS (import torch + streamlit):** 210.8 MB
+- **Peak RSS (Dataset Load):** 815.1 MB
+- **Peak RSS (Training Run):** 639.9 MB
+- **Peak RSS (Grad-CAM):** 367.4 MB
+- **Overall Peak Process RSS:** **815.1 MB** (Peak occurs during initial full CIFAR-10 array concatenation before filtering; training and inference stay under 640 MB).
 
 ---
 
@@ -170,7 +173,6 @@ Measured on CPU via `python measure_memory.py` using `tracemalloc`:
 ```
 clever_hans_hunter/
 ├── streamlit_app.py       – Streamlit UI with full game loop, diagnostics, and training
-├── app.py                 – Gradio UI entry point
 ├── data.py                – CIFAR-10 dataset builder, shortcut injection, and group IDs
 ├── model.py               – Pretrained ResNet18 wrapper with freeze modes
 ├── train.py               – Training engine, augmentations, loss functions, and metrics
