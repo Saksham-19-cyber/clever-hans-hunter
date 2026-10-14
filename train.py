@@ -84,10 +84,8 @@ image_size :int =64 ,
             self .noise_strength =noise_strength 
 
         def forward (self ,x :torch .Tensor )->torch .Tensor :
-
-
             if self .pipe is not None :
-                x =torch .stack ([self .pipe (img )for img in x ])
+                x =self .pipe (x )
             if self .add_noise :
                 noise =torch .randn_like (x )*0.05 *self .noise_strength 
                 x =torch .clamp (x +noise ,0.0 ,1.0 )
