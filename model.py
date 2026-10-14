@@ -7,6 +7,7 @@ Fine-tuning depth options
   "full"           – unfreeze all parameters
 """
 
+from pathlib import Path 
 import torch 
 import torch .nn as nn 
 from torchvision .models import resnet18 ,ResNet18_Weights 
@@ -14,22 +15,24 @@ from torchvision .models import resnet18 ,ResNet18_Weights
 FINETUNE_MODES =["head_only","last_block","full"]
 
 
+LOCAL_WEIGHTS_PATH =Path (__file__ ).parent /"weights"/"resnet18_imagenet.pth"
+
+
 def build_model (
 num_classes :int =2 ,
 finetune_mode :str ="head_only",
 pretrained :bool =True ,
 )->nn .Module :
-    """
-    Return a ResNet18 adapted for *num_classes* binary outputs.
-
-    Parameters
-    ----------
-    finetune_mode : one of "head_only", "last_block", "full"
-    pretrained    : if True load ImageNet weights (default)
-    """
-    weights =ResNet18_Weights .IMAGENET1K_V1 if pretrained else None 
-    model =resnet18 (weights =weights )
-
+    if pretrained :
+        if LOCAL_WEIGHTS_PATH .is_file ():
+            model =resnet18 (weights =None )
+            state_dict =torch .load (LOCAL_WEIGHTS_PATH ,map_location ="cpu",weights_only =True )
+            model .load_state_dict (state_dict )
+        else :
+            weights =ResNet18_Weights .IMAGENET1K_V1 
+            model =resnet18 (weights =weights )
+    else :
+        model =resnet18 (weights =None )
 
     in_features =model .fc .in_features 
     model .fc =nn .Linear (in_features ,num_classes )
