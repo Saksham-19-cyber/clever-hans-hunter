@@ -1,0 +1,44 @@
+{
+  "head_only_1ep": {
+    "mode": "head_only",
+    "epochs": 1,
+    "elapsed_seconds": 67.42,
+    "val_acc": 0.831,
+    "worst_group_acc": 0.0659
+  },
+  "head_only_2ep": {
+    "mode": "head_only",
+    "epochs": 2,
+    "elapsed_seconds": 112.29,
+    "val_acc": 0.883,
+    "worst_group_acc": 0.0775
+  },
+  "last_block_1ep": {
+    "mode": "last_block",
+    "epochs": 1,
+    "elapsed_seconds": 109.82,
+    "val_acc": 0.938,
+    "worst_group_acc": 0.186
+  },
+  "last_block_2ep": {
+    "mode": "last_block",
+    "epochs": 2,
+    "elapsed_seconds": 391.86,
+    "val_acc": 0.95,
+    "worst_group_acc": 0.1279
+  },
+  "full_1ep": {
+    "mode": "full",
+    "epochs": 1,
+    "elapsed_seconds": 256.44,
+    "val_acc": 0.951,
+    "worst_group_acc": 0.1008
+  },
+  "full_2ep": {
+    "mode": "full",
+    "epochs": 2,
+    "elapsed_seconds": 277.31,
+    "val_acc": 0.949,
+    "worst_group_acc": 0.0736
+  }
+}

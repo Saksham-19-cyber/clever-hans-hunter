@@ -157,6 +157,7 @@ class TrainConfig :
     use_hflip :bool =False 
     use_gaussian_noise :bool =False 
     aug_strength :float =0.5 
+    group_weights_power :float =1.0 
 
 
     image_size :int =64 
@@ -298,7 +299,8 @@ base_model :Optional [nn .Module ]=None ,
     for g in train_ds .group_ids :
         group_counts [g ]+=1 
     group_counts =group_counts .clamp (min =1 )
-    group_weights =group_counts .sum ()/(4 *group_counts )
+    group_weights =(group_counts .sum ()/(4 *group_counts ))**cfg .group_weights_power 
+
 
 
     trainable =[p for p in model .parameters ()if p .requires_grad ]
