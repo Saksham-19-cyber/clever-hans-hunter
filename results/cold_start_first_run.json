@@ -1,8 +1,8 @@
 {
-  "cifar_download_seconds": 460.0,
-  "resnet18_weights_download_seconds": 380.38,
-  "dataset_build_seconds": 5.35,
-  "baseline_model_load_seconds": 0.52,
-  "total_first_run_from_scratch_seconds": 846.24,
-  "cold_start_with_cached_weights_seconds": 5.86
+  "dataset_load_seconds": 29.99,
+  "resnet18_weights_load_seconds": 1.445,
+  "baseline_checkpoint_load_seconds": 0.016,
+  "total_cold_start_seconds": 31.452,
+  "cifar_data_recreated": false,
+  "torch_cache_recreated": false
 }
