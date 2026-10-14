@@ -44,6 +44,7 @@ _compute_group_accs ,_confusion_matrix ,
 
 ROOT =Path (__file__ ).parent 
 CACHE_DIR =ROOT /"cache"
+CHECKPOINTS_DIR =ROOT /"checkpoints"
 SEED =42 
 
 LEVEL_TARGETS ={1 :0.55 ,2 :0.60 ,3 :0.52 }
@@ -105,7 +106,10 @@ def _fig_to_img (fig ):
 
 @st .cache_resource (show_spinner ="Loading dataset ...")
 def cached_datasets (level :int ):
-    CACHE_DIR .mkdir (exist_ok =True )
+    try :
+        CACHE_DIR .mkdir (exist_ok =True )
+    except Exception :
+        pass 
     cp =CACHE_DIR /f"level{level }_datasets.pkl"
     if cp .exists ():
         try :
@@ -117,14 +121,40 @@ def cached_datasets (level :int ):
     try :
         with open (cp ,"wb")as f :
             pickle .dump (result ,f )
-    except OSError :
+    except Exception :
         pass 
     return result 
 
 
-@st .cache_resource (show_spinner ="Training baseline ...")
+@st .cache_resource (show_spinner ="Loading baseline ...")
 def cached_baseline (level :int ):
-    CACHE_DIR .mkdir (exist_ok =True )
+    ckpt_path =CHECKPOINTS_DIR /f"level{level }_baseline.pt"
+    if ckpt_path .exists ():
+        try :
+            ckpt =torch .load (ckpt_path ,map_location ="cpu",weights_only =False )
+            model =build_model (finetune_mode ="head_only",pretrained =True )
+            if "fc_state_dict"in ckpt :
+                model .fc .load_state_dict (ckpt ["fc_state_dict"])
+            elif "model_state_dict"in ckpt :
+                model .load_state_dict (ckpt ["model_state_dict"])
+            model .eval ()
+            return TrainResult (
+            val_acc =ckpt ["val_acc"],
+            test_avg_acc =ckpt ["test_avg_acc"],
+            worst_group_acc =ckpt ["worst_group_acc"],
+            group_accs =ckpt ["group_accs"],
+            confusion_matrix =np .array (ckpt ["confusion_matrix"]),
+            history =ckpt ["history"],
+            model =model ,
+            suspicious =ckpt .get ("suspicious",[]),
+            )
+        except Exception :
+            pass 
+
+    try :
+        CACHE_DIR .mkdir (exist_ok =True )
+    except Exception :
+        pass 
     cp =CACHE_DIR /f"level{level }_baseline.pkl"
     if cp .exists ():
         try :
@@ -137,7 +167,7 @@ def cached_baseline (level :int ):
     try :
         with open (cp ,"wb")as f :
             pickle .dump (result ,f )
-    except OSError :
+    except Exception :
         pass 
     return result 
 
