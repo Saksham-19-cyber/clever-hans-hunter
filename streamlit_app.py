@@ -31,7 +31,7 @@ import torch
 sys .path .insert (0 ,str (Path (__file__ ).parent ))
 
 from data import (
-CLASS_NAMES ,IMAGE_SIZE ,build_datasets ,get_normalize_transform ,
+CLASS_NAMES ,DATA_ROOT ,IMAGE_SIZE ,build_datasets ,get_normalize_transform ,
 shortcut_correlation ,ShortcutDataset ,
 )
 from gradcam import _tensor_to_pil ,make_gradcam_panel 
@@ -104,29 +104,29 @@ def _fig_to_img (fig ):
     return buf .read ()
 
 
-@st .cache_resource (show_spinner ="Loading dataset ...")
-def cached_datasets (level :int ):
-    try :
-        CACHE_DIR .mkdir (exist_ok =True )
-    except Exception :
-        pass 
-    cp =CACHE_DIR /f"level{level }_datasets.pkl"
-    if cp .exists ():
-        try :
-            with open (cp ,"rb")as f :
-                return pickle .load (f )
-        except Exception :
-            pass 
-    result =build_datasets (level ,seed =SEED )
-    try :
-        with open (cp ,"wb")as f :
-            pickle .dump (result ,f )
-    except Exception :
-        pass 
-    return result 
+@st.cache_resource(show_spinner="Preparing Clever Hans dataset (downloads CIFAR-10 on first startup)...")
+def cached_datasets(level: int):
+    try:
+        CACHE_DIR.mkdir(exist_ok=True)
+    except Exception:
+        pass
+    cp = CACHE_DIR / f"level{level}_datasets.pkl"
+    if cp.exists():
+        try:
+            with open(cp, "rb") as f:
+                return pickle.load(f)
+        except Exception:
+            pass
+    result = build_datasets(level, seed=SEED)
+    try:
+        with open(cp, "wb") as f:
+            pickle.dump(result, f)
+    except Exception:
+        pass
+    return result
 
 
-@st .cache_resource (show_spinner ="Loading baseline ...")
+@st.cache_resource(show_spinner="Loading precomputed baseline...")
 def cached_baseline (level :int ):
     ckpt_path =CHECKPOINTS_DIR /f"level{level }_baseline.pt"
     if ckpt_path .exists ():
@@ -515,7 +515,7 @@ def main ():
             ["head_only","last_block","full"],
             format_func ={"head_only":"Head only (fastest)",
             "last_block":"Last block + head",
-            "full":"Full fine-tune"}.get ,
+            "full":"Full fine-tune (slow on CPU)"}.get ,
             index =0 ,key ="ft_mode",
             )
             st .markdown ("**Optimiser**")
