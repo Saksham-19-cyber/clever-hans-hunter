@@ -20,8 +20,8 @@ build_datasets ,apply_shortcut ,make_group_id ,
 shortcut_correlation ,SHORTCUT_CORR_TRAIN ,SHORTCUT_CORR_TEST ,
 )
 from model import build_model ,FINETUNE_MODES 
-from gradcam import GradCAM 
-from data import get_normalize_transform 
+from gradcam import GradCAM ,make_gradcam_panel 
+from data import get_normalize_transform ,normalize_tensor 
 
 
 @pytest .mark .parametrize ("level",[1 ,2 ,3 ])
@@ -116,6 +116,22 @@ def test_gradcam_output_shape ():
     )
     assert 0 <=pred_cls <=1 ,f"pred_cls={pred_cls } out of range"
     assert 0.0 <=conf <=1.0 ,f"confidence={conf } out of range"
+
+
+def test_gradcam_with_uint8_raw_input ():
+    model =build_model (pretrained =False ,finetune_mode ="full")
+    model .eval ()
+    tr ,va ,te =build_datasets (1 ,seed =42 )
+    raw_img ,*_ =te [0 ]
+    assert raw_img .dtype ==torch .uint8 
+    img_norm =normalize_tensor (raw_img .unsqueeze (0 ))
+    orig_pil ,heat_pil ,ov_pil ,pred_cls ,conf =make_gradcam_panel (model ,img_norm ,raw_img =raw_img )
+    assert orig_pil .size ==(64 ,64 )
+    assert ov_pil .size ==(64 ,64 )
+    assert 0 <=pred_cls <=1 
+
+    orig2 ,heat2 ,ov2 ,pred2 ,conf2 =make_gradcam_panel (model ,raw_img )
+    assert orig2 .size ==(64 ,64 )
 
 
 def test_dataset_sizes ():
