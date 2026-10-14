@@ -163,6 +163,7 @@ class TrainConfig :
     image_size :int =64 
     seed :int =42 
     device :str ="cpu"
+    custom_aug_transform :Optional [nn .Module ]=None 
 
 
 @dataclass 
@@ -176,6 +177,7 @@ class TrainResult :
     model :nn .Module 
 
     suspicious :List [Tuple [int ,int ,int ,float ]]=field (default_factory =list )
+    group_counts :Dict [int ,Tuple [int ,int ]]=field (default_factory =dict )
 
 
 def _compute_group_accs (
@@ -276,16 +278,19 @@ base_model :Optional [nn .Module ]=None ,
     model .to (device )
 
 
-    aug =build_augmentation_transform (
-    use_color_jitter =cfg .use_color_jitter ,
-    use_random_gray =cfg .use_random_gray ,
-    use_random_crop =cfg .use_random_crop ,
-    use_random_erasing =cfg .use_random_erasing ,
-    use_hflip =cfg .use_hflip ,
-    use_gaussian_noise =cfg .use_gaussian_noise ,
-    aug_strength =cfg .aug_strength ,
-    image_size =cfg .image_size ,
-    )
+    if cfg .custom_aug_transform is not None :
+        aug =cfg .custom_aug_transform 
+    else :
+        aug =build_augmentation_transform (
+        use_color_jitter =cfg .use_color_jitter ,
+        use_random_gray =cfg .use_random_gray ,
+        use_random_crop =cfg .use_random_crop ,
+        use_random_erasing =cfg .use_random_erasing ,
+        use_hflip =cfg .use_hflip ,
+        use_gaussian_noise =cfg .use_gaussian_noise ,
+        aug_strength =cfg .aug_strength ,
+        image_size =cfg .image_size ,
+        )
 
 
     train_loader ,val_loader ,test_loader =make_dataloaders (
@@ -384,6 +389,12 @@ base_model :Optional [nn .Module ]=None ,
     cm =_confusion_matrix (test_preds ,test_labels )
 
 
+    group_counts_dict ={}
+    for g in range (4 ):
+        g_mask =[i for i ,grp in enumerate (test_groups )if grp ==g ]
+        g_corr =sum (test_preds [i ]==test_labels [i ]for i in g_mask )
+        group_counts_dict [g ]=(g_corr ,len (g_mask ))
+
     suspicious =[]
     for i ,(p ,l ,c )in enumerate (zip (test_preds ,test_labels ,test_confs )):
         if p !=l :
@@ -404,6 +415,7 @@ base_model :Optional [nn .Module ]=None ,
     history =history ,
     model =model ,
     suspicious =suspicious [:20 ],
+    group_counts =group_counts_dict ,
     )
 
 
