@@ -1,0 +1,6 @@
+{
+  "dataset_load_MB": 663.3,
+  "training_run_MB": 1.2,
+  "gradcam_MB": 1.4,
+  "overall_peak_MB": 663.3
+}
