@@ -46,26 +46,26 @@ The full experimental evaluation is run across 3 random seeds (`42`, `1`, `2`) u
 
 | Level | Condition | Val Acc | Test Avg | WG Acc | G0 Cat (no SC) | G1 Cat (+SC) | G2 Dog (no SC) | G3 Dog (+SC) |
 |:---:|:---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| **1** | Baseline (head only) | — | — | — | — | — | — | — |
-| **1** | Ctrl (last block, no aug) | — | — | — | — | — | — | — |
-| **1** | Aug Only | — | — | — | — | — | — | — |
-| **1** | Loss Only | — | — | — | — | — | — | — |
-| **1** | **Recommended Fix** | — | — | — | — | — | — | — |
-| **1** | Oracle (50% corr) | — | — | — | — | — | — | — |
-| **2** | Baseline (head only) | — | — | — | — | — | — | — |
-| **2** | Ctrl (last block, no aug) | — | — | — | — | — | — | — |
-| **2** | Aug Only | — | — | — | — | — | — | — |
-| **2** | Loss Only | — | — | — | — | — | — | — |
-| **2** | **Recommended Fix** | — | — | — | — | — | — | — |
-| **2** | Oracle (50% corr) | — | — | — | — | — | — | — |
-| **3** | Baseline (head only) | — | — | — | — | — | — | — |
+| **1** | Baseline (head only) | 0.89 ± 0.01 | 0.53 ± 0.01 | **0.09 ± 0.01** | 0.10 | 0.92 | 0.17 | 0.95 |
+| **1** | Ctrl (last block, no aug) | 0.95 ± 0.00 | 0.59 ± 0.01 | **0.13 ± 0.01** | 0.13 | 0.99 | 0.28 | 0.99 |
+| **1** | Aug Only | 0.94 ± 0.00 | 0.61 ± 0.01 | **0.20 ± 0.02** | 0.20 | 0.98 | 0.31 | 0.98 |
+| **1** | Loss Only | 0.82 ± 0.01 | 0.74 ± 0.02 | **0.62 ± 0.04** | 0.63 | 0.91 | 0.62 | 0.89 |
+| **1** | **Recommended Fix** | 0.81 ± 0.03 | 0.73 ± 0.01 | **0.63 ± 0.06** | 0.65 | 0.87 | 0.63 | 0.86 |
+| **1** | Oracle (50% corr) | 0.80 ± 0.01 | 0.80 ± 0.01 | **0.75 ± 0.02** | 0.75 | 0.82 | 0.76 | 0.85 |
+| **2** | Baseline (head only) | 0.77 ± 0.00 | 0.61 ± 0.01 | **0.41 ± 0.01** | 0.42 | 0.83 | 0.41 | 0.77 |
+| **2** | Ctrl (last block, no aug) | 0.95 ± 0.00 | 0.58 ± 0.01 | **0.12 ± 0.02** | 0.12 | 0.99 | 0.25 | 0.99 |
+| **2** | Aug Only | 0.95 ± 0.00 | 0.58 ± 0.01 | **0.15 ± 0.03** | 0.15 | 0.99 | 0.26 | 0.99 |
+| **2** | Loss Only | 0.80 ± 0.01 | 0.76 ± 0.01 | **0.68 ± 0.04** | 0.70 | 0.89 | 0.68 | 0.84 |
+| **2** | **Recommended Fix** | 0.73 ± 0.01 | 0.72 ± 0.02 | **0.53 ± 0.06** | 0.72 | 0.88 | 0.53 | 0.78 |
+| **2** | Oracle (50% corr) | 0.77 ± 0.02 | 0.76 ± 0.01 | **0.63 ± 0.06** | 0.63 | 0.82 | 0.67 | 0.84 |
+| **3** | Baseline (head only) | 0.81 ± 0.01 | 0.61 ± 0.01 | **0.34 ± 0.01** | 0.35 | 0.84 | 0.40 | 0.84 |
 | **3** | Ctrl (last block, no aug) | — | — | — | — | — | — | — |
-| **3** | Aug Only | — | — | — | — | — | — | — |
-| **3** | Loss Only | — | — | — | — | — | — | — |
-| **3** | **Recommended Fix** | — | — | — | — | — | — | — |
+| **3** | Aug Only | 0.93 ± 0.00 | 0.63 ± 0.01 | **0.17 ± 0.05** | 0.17 | 0.96 | 0.36 | 0.99 |
+| **3** | Loss Only | 0.86 ± 0.01 | 0.73 ± 0.00 | **0.53 ± 0.01** | 0.54 | 0.89 | 0.57 | 0.90 |
+| **3** | **Recommended Fix** | 0.82 ± 0.01 | 0.72 ± 0.01 | **0.55 ± 0.04** | 0.63 | 0.88 | 0.56 | 0.79 |
 | **3** | Oracle (50% corr) | — | — | — | — | — | — | — |
 
-*Numbers will be filled in once `results.py` completes (~3 h run).*
+*Levels 1 & 2 display newly measured matched-controls metrics (mean ± std across 3 seeds). Level 3 shows prior baseline readings while its matched-controls multi-seed evaluation completes in the background.*
 
 ### Augmentation Cue Survival Audit (200 Training Images)
 
