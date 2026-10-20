@@ -547,6 +547,12 @@ def run_condition(
             f"val={result.val_acc:.3f} test_avg={result.test_avg_acc:.3f} elapsed={elapsed:.0f}s"
         )
 
+    stats = build_stats_summary(level, condition, seeds, rows)
+    return stats, first_result
+
+
+def build_stats_summary(level: int, condition: str, seeds: list, rows: list) -> dict:
+    """Compute summary statistics and unpooled Wilson CI ranges across seeds."""
     wg_vals = [r["wg_acc"] for r in rows]
     va_vals = [r["val_acc"] for r in rows]
     ta_vals = [r["test_avg"] for r in rows]
@@ -558,7 +564,7 @@ def run_condition(
 
         cis_g = []
         for r in rows:
-            if str(g) in r["group_counts"]:
+            if str(g) in r.get("group_counts", {}):
                 k, n = r["group_counts"][str(g)]
                 if n > 0:
                     cis_g.append(wilson_ci(k, n))
@@ -586,7 +592,7 @@ def run_condition(
             if not np.isnan(acc) and acc <= min_acc:
                 min_acc = acc
                 min_g = str(g)
-        if min_g is not None and min_g in r["group_counts"]:
+        if min_g is not None and min_g in r.get("group_counts", {}):
             k, n = r["group_counts"][min_g]
             if n > 0:
                 wg_cis.append(wilson_ci(k, n))
@@ -596,7 +602,7 @@ def run_condition(
     else:
         wg_ci_range = [0.0, 0.0]
 
-    stats = {
+    return {
         "level": level,
         "condition": condition,
         "seeds": seeds,
@@ -613,7 +619,6 @@ def run_condition(
             "group_accs": group_summary,
         },
     }
-    return stats, first_result
 
 
 def _style(fig):
@@ -920,6 +925,14 @@ def merge_all_results() -> dict:
                     d = json.load(f)
                 if "_cue_audit_reports" in d:
                     cue_audits.update(d.pop("_cue_audit_reports"))
+                for k, v in d.items():
+                    if isinstance(v, dict) and "rows" in v and "seeds" in v:
+                        v["summary"] = build_stats_summary(
+                            v.get("level", lvl),
+                            v.get("condition", k),
+                            v.get("seeds", []),
+                            v["rows"],
+                        )["summary"]
                 merged.update(d)
                 print(f"Loaded {p} ({len(d)} conditions)")
             except Exception as e:
