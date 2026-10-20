@@ -62,10 +62,10 @@ LEVEL_SHORTCUTS ={
 "overlay dog images. Same 95 %/50 % train-vs-test rule."),
 }
 
-LEVEL_FIXES ={
-1 :"ColorJitter + RandomGrayscale augmentation + group-reweighted CE loss.",
-2 :"RandomErasing + RandomResizedCrop + group-reweighted CE loss.",
-3 :"RandomGrayscale + Gaussian Noise + group-reweighted CE loss.",
+LEVEL_FIXES = {
+    1: "Group-reweighted CE loss is the effective lever (up-weights shortcut-absent groups). Augmentation did not help at the tested strengths.",
+    2: "Group-reweighted CE loss is the effective lever (up-weights shortcut-absent groups). Augmentation did not help at the tested strengths.",
+    3: "Group-reweighted CE loss is the effective lever (up-weights shortcut-absent groups). Augmentation did not help at the tested strengths.",
 }
 
 GROUP_LABELS =[
@@ -654,7 +654,7 @@ def main ():
         {"Concept":"Transfer Learning",
         "How it appears":"ResNet18 (ImageNet weights) -- backbone reused, only head replaced by default."},
         {"Concept":"Data Augmentation",
-        "How it appears":"ColorJitter / RandomErasing / RandomGrayscale destroy the shortcut signal."},
+        "How it appears":"Group-reweighted loss is the effective lever; data augmentation did not help at the tested strengths as residual cues remain exploited."},
         {"Concept":"Loss Functions",
         "How it appears":"Group-reweighted CE directly penalises failures on shortcut-absent groups."},
         {"Concept":"Metrics",
