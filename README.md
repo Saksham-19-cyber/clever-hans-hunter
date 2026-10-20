@@ -58,14 +58,14 @@ The full experimental evaluation is run across 3 random seeds (`42`, `1`, `2`) u
 | **2** | Loss Only | 0.80 ± 0.01 | 0.76 ± 0.01 | **0.68 ± 0.04** | 0.70 | 0.89 | 0.68 | 0.84 |
 | **2** | **Recommended Fix** | 0.73 ± 0.01 | 0.72 ± 0.02 | **0.53 ± 0.06** | 0.72 | 0.88 | 0.53 | 0.78 |
 | **2** | Oracle (50% corr) | 0.77 ± 0.02 | 0.76 ± 0.01 | **0.63 ± 0.06** | 0.63 | 0.82 | 0.67 | 0.84 |
-| **3** | Baseline (head only) | 0.81 ± 0.01 | 0.61 ± 0.01 | **0.34 ± 0.01** | 0.35 | 0.84 | 0.40 | 0.84 |
-| **3** | Ctrl (last block, no aug) | — | — | — | — | — | — | — |
-| **3** | Aug Only | 0.93 ± 0.00 | 0.63 ± 0.01 | **0.17 ± 0.05** | 0.17 | 0.96 | 0.36 | 0.99 |
-| **3** | Loss Only | 0.86 ± 0.01 | 0.73 ± 0.00 | **0.53 ± 0.01** | 0.54 | 0.89 | 0.57 | 0.90 |
-| **3** | **Recommended Fix** | 0.82 ± 0.01 | 0.72 ± 0.01 | **0.55 ± 0.04** | 0.63 | 0.88 | 0.56 | 0.79 |
-| **3** | Oracle (50% corr) | — | — | — | — | — | — | — |
+| **3** | Baseline (head only) | 0.79 ± 0.00 | 0.60 ± 0.01 | **0.36 ± 0.03** | 0.36 | 0.82 | 0.42 | 0.82 |
+| **3** | Ctrl (last block, no aug) | 0.95 ± 0.00 | 0.58 ± 0.00 | **0.14 ± 0.00** | 0.14 | 0.99 | 0.25 | 0.99 |
+| **3** | Aug Only | 0.92 ± 0.00 | 0.59 ± 0.01 | **0.12 ± 0.02** | 0.12 | 0.87 | 0.40 | 0.98 |
+| **3** | Loss Only | 0.80 ± 0.01 | 0.73 ± 0.01 | **0.61 ± 0.03** | 0.62 | 0.82 | 0.64 | 0.84 |
+| **3** | **Recommended Fix** | 0.77 ± 0.04 | 0.68 ± 0.00 | **0.51 ± 0.02** | 0.53 | 0.72 | 0.63 | 0.85 |
+| **3** | Oracle (50% corr) | 0.78 ± 0.01 | 0.74 ± 0.01 | **0.60 ± 0.04** | 0.82 | 0.82 | 0.60 | 0.71 |
 
-*Levels 1 & 2 display newly measured matched-controls metrics (mean ± std across 3 seeds). Level 3 shows prior baseline readings while its matched-controls multi-seed evaluation completes in the background.*
+*All levels (1, 2, and 3) display empirical matched-controls metrics (mean ± std across 3 seeds, 2 epochs per condition).*
 
 ### Augmentation Cue Survival Audit (200 Training Images)
 

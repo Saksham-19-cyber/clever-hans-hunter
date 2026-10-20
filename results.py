@@ -690,6 +690,39 @@ def print_table(all_stats: dict):
     print("=" * 115 + "\n")
 
 
+def print_markdown_table(all_stats: dict):
+    print("\n### Markdown Table for README.md:\n")
+    print("| Level | Condition | Val Acc | Test Avg | WG Acc | G0 Cat (no SC) | G1 Cat (+SC) | G2 Dog (no SC) | G3 Dog (+SC) |")
+    print("|:---:|:---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|")
+    cond_display = [
+        ("baseline_head", "Baseline (head only)"),
+        ("ctrl_lb", "Ctrl (last block, no aug)"),
+        ("aug_only", "Aug Only"),
+        ("loss_only", "Loss Only"),
+        ("fix", "**Recommended Fix**"),
+        ("oracle", "Oracle (50% corr)"),
+    ]
+    for level in [1, 2, 3]:
+        for cond, label in cond_display:
+            key = f"L{level}_{cond}"
+            if key not in all_stats and cond == "baseline_head":
+                key = f"L{level}_baseline"
+            if key not in all_stats:
+                print(f"| **{level}** | {label} | — | — | — | — | — | — | — |")
+                continue
+            s = all_stats[key]["summary"]
+            ga = s["group_accs"]
+            val_str = f"{s['val_acc']['mean']:.2f} ± {s['val_acc']['std']:.2f}"
+            tst_str = f"{s['test_avg']['mean']:.2f} ± {s['test_avg']['std']:.2f}"
+            wg_str = f"**{s['wg_acc']['mean']:.2f} ± {s['wg_acc']['std']:.2f}**"
+            g0 = f"{ga.get('0', {}).get('mean', float('nan')):.2f}"
+            g1 = f"{ga.get('1', {}).get('mean', float('nan')):.2f}"
+            g2 = f"{ga.get('2', {}).get('mean', float('nan')):.2f}"
+            g3 = f"{ga.get('3', {}).get('mean', float('nan')):.2f}"
+            print(f"| **{level}** | {label} | {val_str} | {tst_str} | {wg_str} | {g0} | {g1} | {g2} | {g3} |")
+    print()
+
+
 def check_targets(all_stats: dict) -> list:
     warnings = []
     for level in [1, 2, 3]:
@@ -717,10 +750,24 @@ def main():
         default=None,
         help="Override epochs for all conditions (useful for quick tests)",
     )
+    parser.add_argument(
+        "--skip-existing",
+        action="store_true",
+        help="Skip conditions that already have all requested seeds in results.json",
+    )
     args = parser.parse_args()
 
+    json_path = RESULTS_DIR / "results.json"
     all_stats = {}
-    cue_audit_reports = {}
+    if json_path.exists():
+        try:
+            with open(json_path, "r") as f:
+                all_stats = json.load(f)
+            print(f"Loaded existing results from {json_path} ({len(all_stats)} keys)")
+        except Exception as e:
+            print(f"Warning: could not load existing {json_path}: {e}")
+
+    cue_audit_reports = all_stats.get("_cue_audit_reports", {})
     fix_results_by_level = {}
     base_results_by_level = {}
 
@@ -739,9 +786,19 @@ def main():
     print("  STEP 4: AUGMENTATION CUE SURVIVAL AUDIT (200 SAMPLES)")
     print("=" * 60)
     for level in args.levels:
-        report = audit_cue_survival(level, n_samples=200)
-        cue_audit_reports[level] = report
-        print(f"Level {level} Cue Audit: {report['details']}")
+        lvl_k = str(level)
+        if lvl_k in cue_audit_reports or level in cue_audit_reports:
+            report = cue_audit_reports.get(lvl_k, cue_audit_reports.get(level))
+            print(f"Level {level} Cue Audit (cached): {report['details']}")
+        else:
+            report = audit_cue_survival(level, n_samples=200)
+            cue_audit_reports[lvl_k] = report
+            print(f"Level {level} Cue Audit: {report['details']}")
+
+    def _persist():
+        all_stats["_cue_audit_reports"] = cue_audit_reports
+        with open(json_path, "w") as f:
+            json.dump(all_stats, f, indent=2)
 
     for level in args.levels:
         print(f"\n{'='*60}")
@@ -751,11 +808,17 @@ def main():
         tr_ds, va_ds, te_ds = build_datasets(level, seed=42)
 
         for cond in conditions:
+            key = f"L{level}_{cond}"
+            if args.skip_existing and key in all_stats:
+                existing_seeds = set(all_stats[key].get("seeds", []))
+                if set(args.seeds).issubset(existing_seeds):
+                    print(f"\n  -- {cond} (already present in results.json, skipping) --")
+                    continue
+
             print(f"\n  -- {cond} --")
             stats, res0 = run_condition(
                 level, cond, args.seeds, epochs_override=args.epochs
             )
-            key = f"L{level}_{cond}"
             all_stats[key] = stats
             if cond == "baseline_head":
                 all_stats[f"L{level}_baseline"] = stats
@@ -763,21 +826,22 @@ def main():
             elif cond == "fix":
                 fix_results_by_level[level] = res0
 
-        base_r = base_results_by_level[level]
-        fix_r = fix_results_by_level[level]
+            _persist()
+            print(f"  [Checkpoint saved to {json_path}]")
+
+        base_r = base_results_by_level.get(level)
+        fix_r = fix_results_by_level.get(level)
 
         plot_group_bars(all_stats, level, DOCS_DIR / f"level{level}_groups.png")
         plot_comparison(all_stats, level, DOCS_DIR / f"level{level}_comparison.png")
-        save_gradcam_examples(level, base_r, fix_r, te_ds, DOCS_DIR)
+        if base_r is not None and fix_r is not None:
+            save_gradcam_examples(level, base_r, fix_r, te_ds, DOCS_DIR)
 
-    all_stats["_cue_audit_reports"] = cue_audit_reports
-
-    json_path = RESULTS_DIR / "results.json"
-    with open(json_path, "w") as f:
-        json.dump(all_stats, f, indent=2)
-    print(f"\nSaved results to {json_path}")
+    _persist()
+    print(f"\nSaved final results to {json_path}")
 
     print_table(all_stats)
+    print_markdown_table(all_stats)
 
     warnings = check_targets(all_stats)
     if warnings:

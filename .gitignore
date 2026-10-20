@@ -8,5 +8,6 @@ cifar_data/
 .pytest_cache/
 cache/
 *.pkl
+*.log
 
 
