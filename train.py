@@ -162,6 +162,7 @@ class TrainConfig :
     seed :int =42 
     device :str ="cpu"
     custom_aug_transform :Optional [nn .Module ]=None 
+    eval_transform :Optional [nn .Module ]=None 
 
 
 @dataclass 
@@ -294,6 +295,7 @@ base_model :Optional [nn .Module ]=None ,
     train_loader ,val_loader ,test_loader =make_dataloaders (
     train_ds ,val_ds ,test_ds ,
     train_transform =aug ,
+    eval_transform =cfg .eval_transform ,
     batch_size =cfg .batch_size ,
     )
 

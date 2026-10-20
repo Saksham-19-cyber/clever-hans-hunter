@@ -278,6 +278,7 @@ def make_dataloaders(
     val_ds: ShortcutDataset,
     test_ds: ShortcutDataset,
     train_transform=None,
+    eval_transform=None,
     batch_size: int = 64,
     num_workers: int = 0,
 ) -> Tuple[DataLoader, DataLoader, DataLoader]:
@@ -296,6 +297,8 @@ def make_dataloaders(
         imgs, lbls, gids = zip(*batch)
         imgs = torch.stack(imgs)
         imgs = to_float_tensor(imgs)
+        if eval_transform is not None:
+            imgs = eval_transform(imgs)
         imgs = normalize(imgs)
         return imgs, torch.tensor(lbls, dtype=torch.long), torch.tensor(gids, dtype=torch.long)
 
@@ -309,9 +312,9 @@ def make_dataloaders(
     )
     test_loader = DataLoader(
         test_ds, batch_size=batch_size, shuffle=False,
-    num_workers =num_workers ,collate_fn =collate_eval ,
+        num_workers=num_workers, collate_fn=collate_eval,
     )
-    return train_loader ,val_loader ,test_loader 
+    return train_loader, val_loader, test_loader 
 
 
 def shortcut_correlation (ds :ShortcutDataset )->float :
