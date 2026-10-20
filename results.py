@@ -141,6 +141,48 @@ def get_strong_aug(level: int) -> nn.Module:
         return BatchGaussianBlur(kernel_size=7, sigma=2.5)
 
 
+class DeterministicGrayscale(nn.Module):
+    """Deterministic preprocessing for Level 1: converts to 3-channel grayscale at train and eval."""
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        gray = 0.2989 * x[:, 0:1] + 0.5870 * x[:, 1:2] + 0.1140 * x[:, 2:3]
+        return gray.expand(-1, 3, -1, -1)
+
+
+class DeterministicMaskCorner(nn.Module):
+    """Deterministic preprocessing for Level 2: zeroes out top-left 8x8 corner at train and eval."""
+
+    def __init__(self, patch_size: int = 8):
+        super().__init__()
+        self.patch_size = patch_size
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = x.clone()
+        x[:, :, : self.patch_size, : self.patch_size] = 0.0
+        return x
+
+
+class DeterministicGaussianBlur(nn.Module):
+    """Deterministic preprocessing for Level 3: Gaussian blur sigma=2.5 at train and eval."""
+
+    def __init__(self, kernel_size: int = 7, sigma: float = 2.5):
+        super().__init__()
+        self.transform = T.GaussianBlur(kernel_size=kernel_size, sigma=sigma)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.transform(x)
+
+
+def get_preproc_transform(level: int) -> nn.Module:
+    """Return the deterministic cue-removing preprocessing transform for each level."""
+    if level == 1:
+        return DeterministicGrayscale()
+    elif level == 2:
+        return DeterministicMaskCorner(patch_size=8)
+    else:
+        return DeterministicGaussianBlur(kernel_size=7, sigma=2.5)
+
+
 def _baseline_head_cfg(seed: int) -> TrainConfig:
     return TrainConfig(
         finetune_mode="head_only",
@@ -242,13 +284,25 @@ def _fix_cfg(level: int, seed: int) -> TrainConfig:
         )
 
 
+def _oracle_plain_cfg(seed: int) -> TrainConfig:
+    """Fixed oracle condition: last_block, lr 5e-4, plain CE, NO augmentation, trained on oracle data."""
+    return TrainConfig(
+        finetune_mode="last_block",
+        optimizer="adam",
+        learning_rate=5e-4,
+        epochs=2,
+        loss_fn_name="cross_entropy",
+        seed=seed,
+    )
+
+
 def _oracle_cfg(level: int, seed: int) -> TrainConfig:
-    """Oracle condition: same config as fix, trained on shortcut-uncorrelated data."""
+    """Oracle condition with fix augmentations, trained on shortcut-uncorrelated data."""
     return _fix_cfg(level, seed)
 
 
 def _strong_aug_only_cfg(level: int, seed: int) -> TrainConfig:
-    """Strong augmentation only, plain CE (uses knowledge of shortcut)."""
+    """Strong augmentation only, plain CE (uses knowledge of shortcut, train-only)."""
     return TrainConfig(
         finetune_mode="last_block",
         optimizer="adam",
@@ -261,7 +315,7 @@ def _strong_aug_only_cfg(level: int, seed: int) -> TrainConfig:
 
 
 def _strong_aug_loss_cfg(level: int, seed: int) -> TrainConfig:
-    """Strong augmentation + group-reweighted loss (uses knowledge of shortcut)."""
+    """Strong augmentation + group-reweighted loss (uses knowledge of shortcut, train-only)."""
     return TrainConfig(
         finetune_mode="last_block",
         optimizer="adam",
@@ -273,6 +327,36 @@ def _strong_aug_loss_cfg(level: int, seed: int) -> TrainConfig:
     )
 
 
+def _pre_only_cfg(level: int, seed: int) -> TrainConfig:
+    """Preprocessing ablation: cue-removing transform at BOTH train and eval, plain CE."""
+    tf = get_preproc_transform(level)
+    return TrainConfig(
+        finetune_mode="last_block",
+        optimizer="adam",
+        learning_rate=5e-4,
+        epochs=2,
+        loss_fn_name="cross_entropy",
+        seed=seed,
+        custom_aug_transform=tf,
+        eval_transform=tf,
+    )
+
+
+def _pre_loss_cfg(level: int, seed: int) -> TrainConfig:
+    """Preprocessing ablation: cue-removing transform at BOTH train and eval, group-reweighted CE."""
+    tf = get_preproc_transform(level)
+    return TrainConfig(
+        finetune_mode="last_block",
+        optimizer="adam",
+        learning_rate=5e-4,
+        epochs=2,
+        loss_fn_name="group_reweighted_ce",
+        seed=seed,
+        custom_aug_transform=tf,
+        eval_transform=tf,
+    )
+
+
 CONDITIONS = {
     "baseline_head": _baseline_head_cfg,
     "baseline": _baseline_head_cfg,
@@ -280,17 +364,34 @@ CONDITIONS = {
     "aug_only": _aug_only_cfg,
     "loss_only": _loss_only_cfg,
     "fix": _fix_cfg,
+    "oracle_plain": _oracle_plain_cfg,
     "oracle": _oracle_cfg,
     "strong_aug_only": _strong_aug_only_cfg,
     "strong_aug_loss": _strong_aug_loss_cfg,
+    "pre_only": _pre_only_cfg,
+    "pre_loss": _pre_loss_cfg,
 }
+
+TABLE_CONDITIONS = [
+    ("baseline_head", "Baseline (head only)"),
+    ("ctrl_lb", "Ctrl (last block, no aug)"),
+    ("aug_only", "Aug Only"),
+    ("loss_only", "Loss Only"),
+    ("fix", "Recommended Fix"),
+    ("oracle_plain", "Oracle (plain CE, no aug)"),
+    ("oracle", "Oracle (with fix aug)"),
+    ("strong_aug_only", "Strong Aug Only (train-only)"),
+    ("strong_aug_loss", "Strong Aug + Loss (train-only)"),
+    ("pre_only", "Pre-processing Only (train & eval)"),
+    ("pre_loss", "Pre-processing + Loss (train & eval)"),
+]
 
 
 def audit_cue_survival(level: int, n_samples: int = 200) -> dict:
     """
     Measure on 200 augmented training images how often the planted shortcut cue survives.
     - Level 1: mean blue-minus-red channel gap per class.
-    - Level 2: fraction of images whose top-left 8x8 patch is unchanged.
+    - Level 2: mean blue-minus-red channel gap in top-left 8x8 region per class.
     - Level 3: stripe-frequency energy before vs after.
     """
     tr_ds, _, _ = build_datasets(level, seed=42)
@@ -344,22 +445,30 @@ def audit_cue_survival(level: int, n_samples: int = 200) -> dict:
             "details": f"Cat B-R: {cat_bmr_before:+.3f} -> {cat_bmr_std:+.3f} -> {cat_bmr_strong:+.3f} | Dog B-R: {dog_bmr_before:+.3f} -> {dog_bmr_std:+.3f} -> {dog_bmr_strong:+.3f}",
         })
     elif level == 2:
-        unchanged_before = 1.000
-        unchanged_std = sum(
-            torch.allclose(imgs[i, :, :8, :8], aug_std[i, :, :8, :8], atol=1e-3)
-            for i in range(len(idxs))
-        ) / len(idxs)
-        unchanged_strong = sum(
-            torch.allclose(imgs[i, :, :8, :8], aug_strong[i, :, :8, :8], atol=1e-3)
-            for i in range(len(idxs))
-        ) / len(idxs)
+        patch = imgs[:, :, :8, :8]
+        patch_std = aug_std[:, :, :8, :8]
+        patch_strong = aug_strong[:, :, :8, :8]
+
+        cat_bmr_before = (patch[lbls == 0][:, 2] - patch[lbls == 0][:, 0]).mean().item()
+        dog_bmr_before = (patch[lbls == 1][:, 2] - patch[lbls == 1][:, 0]).mean().item()
+        gap_before = cat_bmr_before - dog_bmr_before
+
+        cat_bmr_std = (patch_std[lbls == 0][:, 2] - patch_std[lbls == 0][:, 0]).mean().item()
+        dog_bmr_std = (patch_std[lbls == 1][:, 2] - patch_std[lbls == 1][:, 0]).mean().item()
+        gap_std = cat_bmr_std - dog_bmr_std
+
+        cat_bmr_strong = (patch_strong[lbls == 0][:, 2] - patch_strong[lbls == 0][:, 0]).mean().item()
+        dog_bmr_strong = (patch_strong[lbls == 1][:, 2] - patch_strong[lbls == 1][:, 0]).mean().item()
+        gap_strong = cat_bmr_strong - dog_bmr_strong
 
         report.update({
-            "metric": "fraction_top_left_8x8_unchanged",
-            "before": unchanged_before,
-            "after_std": round(unchanged_std, 3),
-            "after_strong": round(unchanged_strong, 3),
-            "details": f"Patch unchanged: 100% -> {unchanged_std*100:.1f}% (std aug) -> {unchanged_strong*100:.1f}% (strong aug p=0.85 erase)",
+            "metric": "top_left_8x8_blue_minus_red_gap",
+            "before": round(gap_before, 4),
+            "after_std": round(gap_std, 4),
+            "std_retention_pct": round((gap_std / gap_before) * 100, 1) if gap_before else 0.0,
+            "after_strong": round(gap_strong, 4),
+            "strong_retention_pct": round((gap_strong / gap_before) * 100, 1) if gap_before else 0.0,
+            "details": f"Patch B-R gap: {gap_before:.4f} -> {gap_std:.4f} ({gap_std/gap_before*100:.1f}%) -> {gap_strong:.4f} ({gap_strong/gap_before*100:.1f}%)",
         })
     else:
         def stripe_energy(img_batch, lbl_batch):
@@ -399,7 +508,7 @@ def run_condition(
     epochs_override: int | None = None,
 ) -> tuple[dict, object]:
     """Run condition over all seeds and return aggregated stats dict and first result."""
-    is_oracle = condition == "oracle"
+    is_oracle = condition in ("oracle", "oracle_plain")
     tr_ds, va_ds, te_ds = build_datasets(level, seed=42, oracle=is_oracle)
 
     rows = []
@@ -407,7 +516,7 @@ def run_condition(
 
     for seed in seeds:
         cfg_fn = CONDITIONS[condition]
-        if condition in ("baseline", "baseline_head", "ctrl_lb"):
+        if condition in ("baseline", "baseline_head", "ctrl_lb", "oracle_plain"):
             cfg = cfg_fn(seed)
         else:
             cfg = cfg_fn(level, seed)
@@ -446,16 +555,46 @@ def run_condition(
     for g in range(4):
         accs = [r["group_accs"][str(g)] for r in rows if str(g) in r["group_accs"]]
         accs = [v for v in accs if not np.isnan(v)]
-        k_tot = sum(r["group_counts"][str(g)][0] for r in rows if str(g) in r["group_counts"])
-        n_tot = sum(r["group_counts"][str(g)][1] for r in rows if str(g) in r["group_counts"])
-        ci_lo, ci_hi = wilson_ci(k_tot, n_tot)
+
+        cis_g = []
+        for r in rows:
+            if str(g) in r["group_counts"]:
+                k, n = r["group_counts"][str(g)]
+                if n > 0:
+                    cis_g.append(wilson_ci(k, n))
+
+        if cis_g:
+            ci_min_lo = min(c[0] for c in cis_g)
+            ci_max_hi = max(c[1] for c in cis_g)
+            ci_range = [round(ci_min_lo, 4), round(ci_max_hi, 4)]
+        else:
+            ci_range = [0.0, 0.0]
+
         group_summary[str(g)] = {
             "mean": float(np.mean(accs)) if accs else float("nan"),
             "std": float(np.std(accs)) if accs else 0.0,
-            "ci_95": [round(ci_lo, 4), round(ci_hi, 4)],
-            "k_total": k_tot,
-            "n_total": n_tot,
+            "ci_95": ci_range,
+            "cis_per_seed": [[round(c[0], 4), round(c[1], 4)] for c in cis_g],
         }
+
+    wg_cis = []
+    for r in rows:
+        min_g = None
+        min_acc = 1.0
+        for g in range(4):
+            acc = r["group_accs"].get(str(g), float("nan"))
+            if not np.isnan(acc) and acc <= min_acc:
+                min_acc = acc
+                min_g = str(g)
+        if min_g is not None and min_g in r["group_counts"]:
+            k, n = r["group_counts"][min_g]
+            if n > 0:
+                wg_cis.append(wilson_ci(k, n))
+
+    if wg_cis:
+        wg_ci_range = [round(min(c[0] for c in wg_cis), 4), round(max(c[1] for c in wg_cis), 4)]
+    else:
+        wg_ci_range = [0.0, 0.0]
 
     stats = {
         "level": level,
@@ -465,7 +604,12 @@ def run_condition(
         "summary": {
             "val_acc": {"mean": float(np.mean(va_vals)), "std": float(np.std(va_vals))},
             "test_avg": {"mean": float(np.mean(ta_vals)), "std": float(np.std(ta_vals))},
-            "wg_acc": {"mean": float(np.mean(wg_vals)), "std": float(np.std(wg_vals))},
+            "wg_acc": {
+                "mean": float(np.mean(wg_vals)),
+                "std": float(np.std(wg_vals)),
+                "ci_95": wg_ci_range,
+                "cis_per_seed": [[round(c[0], 4), round(c[1], 4)] for c in wg_cis],
+            },
             "group_accs": group_summary,
         },
     }
@@ -487,14 +631,20 @@ def _style(fig):
 
 def plot_group_bars(stats: dict, level: int, path: Path):
     """Per-group accuracy bar chart with error bars for the matched controls."""
-    conditions = ["baseline_head", "ctrl_lb", "aug_only", "loss_only", "fix", "oracle"]
-    cond_labels = ["Baseline (head)", "Ctrl (last block)", "Aug Only", "Loss Only", "Fix", "Oracle"]
-    colors = [_RED, "#fb923c", _YEL, _ACC, _GRN, _CYN]
+    conditions = [
+        "baseline_head", "ctrl_lb", "aug_only", "loss_only", "fix",
+        "oracle_plain", "pre_only", "pre_loss"
+    ]
+    cond_labels = [
+        "Baseline (head)", "Ctrl (last block)", "Aug Only", "Loss Only", "Fix",
+        "Oracle (plain)", "Pre Only", "Pre Loss"
+    ]
+    colors = [_RED, "#fb923c", _YEL, _ACC, _GRN, _CYN, "#a78bfa", "#f472b6"]
     target = LEVEL_TARGETS[level]
 
     x = np.arange(4)
-    w = 0.12
-    fig, ax = plt.subplots(figsize=(11, 4))
+    w = 0.10
+    fig, ax = plt.subplots(figsize=(12, 4))
 
     for i, (cond, label, color) in enumerate(zip(conditions, cond_labels, colors)):
         key = f"L{level}_{cond}"
@@ -506,7 +656,7 @@ def plot_group_bars(stats: dict, level: int, path: Path):
         means = [ga[str(g)]["mean"] for g in range(4)]
         stds = [ga[str(g)]["std"] for g in range(4)]
         ax.bar(
-            x + (i - 2.5) * w,
+            x + (i - 3.5) * w,
             means,
             w,
             label=label,
@@ -541,16 +691,22 @@ def plot_group_bars(stats: dict, level: int, path: Path):
 
 def plot_comparison(stats: dict, level: int, path: Path):
     """Bar chart comparing val acc / test avg / wg acc across conditions."""
-    conditions = ["baseline_head", "ctrl_lb", "aug_only", "loss_only", "fix", "oracle"]
-    cond_labels = ["Baseline (head)", "Ctrl (LB)", "Aug Only", "Loss Only", "Fix", "Oracle"]
-    colors = [_RED, "#fb923c", _YEL, _ACC, _GRN, _CYN]
+    conditions = [
+        "baseline_head", "ctrl_lb", "aug_only", "loss_only", "fix",
+        "oracle_plain", "pre_only", "pre_loss"
+    ]
+    cond_labels = [
+        "Baseline (head)", "Ctrl (LB)", "Aug Only", "Loss Only", "Fix",
+        "Oracle (plain)", "Pre Only", "Pre Loss"
+    ]
+    colors = [_RED, "#fb923c", _YEL, _ACC, _GRN, _CYN, "#a78bfa", "#f472b6"]
     metrics = ["val_acc", "test_avg", "wg_acc"]
     m_labels = ["Val Acc", "Test Avg", "Worst-Group"]
     target = LEVEL_TARGETS[level]
 
     x = np.arange(len(metrics))
-    w = 0.12
-    fig, ax = plt.subplots(figsize=(9, 3.8))
+    w = 0.10
+    fig, ax = plt.subplots(figsize=(10, 4))
 
     for i, (cond, label, color) in enumerate(zip(conditions, cond_labels, colors)):
         key = f"L{level}_{cond}"
@@ -562,7 +718,7 @@ def plot_comparison(stats: dict, level: int, path: Path):
         means = [s[m]["mean"] for m in metrics]
         stds = [s[m]["std"] for m in metrics]
         ax.bar(
-            x + (i - 2.5) * w,
+            x + (i - 3.5) * w,
             means,
             w,
             label=label,
@@ -644,26 +800,18 @@ def save_gradcam_examples(
 
 
 def print_table(all_stats: dict):
-    print("\n" + "=" * 115)
+    print("\n" + "=" * 125)
     print(
-        f"{'Level':>5} | {'Condition':>18} | {'Val Acc':>8} | {'Test Avg':>8} | "
-        f"{'WG Acc':>8} | {'Group 0 (Cat no-SC)':>14} | {'Group 1 (Cat +SC)':>14} | "
+        f"{'Level':>5} | {'Condition':>26} | {'Val Acc':>8} | {'Test Avg':>8} | "
+        f"{'WG Acc (95% CI)':>18} | {'Group 0 (Cat no-SC)':>14} | {'Group 1 (Cat +SC)':>14} | "
         f"{'Group 2 (Dog no-SC)':>14} | {'Group 3 (Dog +SC)':>14}"
     )
-    print("-" * 115)
-    conditions = [
-        "baseline_head",
-        "ctrl_lb",
-        "aug_only",
-        "loss_only",
-        "fix",
-        "oracle",
-        "strong_aug_only",
-        "strong_aug_loss",
-    ]
+    print("-" * 125)
     for level in [1, 2, 3]:
-        for cond in conditions:
+        for cond, label in TABLE_CONDITIONS:
             key = f"L{level}_{cond}"
+            if key not in all_stats and cond == "baseline_head":
+                key = f"L{level}_baseline"
             if key not in all_stats:
                 continue
             s = all_stats[key]["summary"]
@@ -680,30 +828,25 @@ def print_table(all_stats: dict):
                     return "      n/a     "
                 return f"{m:.2f} [{ci[0]:.2f},{ci[1]:.2f}]"
 
+            wg_ci = s["wg_acc"].get("ci_95", [0.0, 0.0])
+            wg_str = f"{fmt(s['wg_acc'])} [{wg_ci[0]:.2f},{wg_ci[1]:.2f}]"
+
             print(
-                f"  {level:>3}  | {cond:>18} | {fmt(s['val_acc']):>8} | "
-                f"{fmt(s['test_avg']):>8} | {fmt(s['wg_acc']):>8} | "
+                f"  {level:>3}  | {label:>26} | {fmt(s['val_acc']):>8} | "
+                f"{fmt(s['test_avg']):>8} | {wg_str:>18} | "
                 f"{fmt_grp(0):>14} | {fmt_grp(1):>14} | "
                 f"{fmt_grp(2):>14} | {fmt_grp(3):>14}"
             )
-        print("-" * 115)
-    print("=" * 115 + "\n")
+        print("-" * 125)
+    print("=" * 125 + "\n")
 
 
 def print_markdown_table(all_stats: dict):
     print("\n### Markdown Table for README.md:\n")
-    print("| Level | Condition | Val Acc | Test Avg | WG Acc | G0 Cat (no SC) | G1 Cat (+SC) | G2 Dog (no SC) | G3 Dog (+SC) |")
+    print("| Level | Condition | Val Acc | Test Avg | WG Acc (95% CI) | G0 Cat (no SC) | G1 Cat (+SC) | G2 Dog (no SC) | G3 Dog (+SC) |")
     print("|:---:|:---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|")
-    cond_display = [
-        ("baseline_head", "Baseline (head only)"),
-        ("ctrl_lb", "Ctrl (last block, no aug)"),
-        ("aug_only", "Aug Only"),
-        ("loss_only", "Loss Only"),
-        ("fix", "**Recommended Fix**"),
-        ("oracle", "Oracle (50% corr)"),
-    ]
     for level in [1, 2, 3]:
-        for cond, label in cond_display:
+        for cond, label in TABLE_CONDITIONS:
             key = f"L{level}_{cond}"
             if key not in all_stats and cond == "baseline_head":
                 key = f"L{level}_baseline"
@@ -714,12 +857,18 @@ def print_markdown_table(all_stats: dict):
             ga = s["group_accs"]
             val_str = f"{s['val_acc']['mean']:.2f} ± {s['val_acc']['std']:.2f}"
             tst_str = f"{s['test_avg']['mean']:.2f} ± {s['test_avg']['std']:.2f}"
-            wg_str = f"**{s['wg_acc']['mean']:.2f} ± {s['wg_acc']['std']:.2f}**"
-            g0 = f"{ga.get('0', {}).get('mean', float('nan')):.2f}"
-            g1 = f"{ga.get('1', {}).get('mean', float('nan')):.2f}"
-            g2 = f"{ga.get('2', {}).get('mean', float('nan')):.2f}"
-            g3 = f"{ga.get('3', {}).get('mean', float('nan')):.2f}"
-            print(f"| **{level}** | {label} | {val_str} | {tst_str} | {wg_str} | {g0} | {g1} | {g2} | {g3} |")
+            wg_ci = s["wg_acc"].get("ci_95", [0.0, 0.0])
+            wg_str = f"**{s['wg_acc']['mean']:.2f} ± {s['wg_acc']['std']:.2f}** [{wg_ci[0]:.2f}, {wg_ci[1]:.2f}]"
+
+            def fmt_g(gid):
+                info = ga.get(str(gid), {})
+                m = info.get("mean", float("nan"))
+                ci = info.get("ci_95", [0.0, 0.0])
+                if np.isnan(m):
+                    return "—"
+                return f"{m:.2f} [{ci[0]:.2f}, {ci[1]:.2f}]"
+
+            print(f"| **{level}** | {label} | {val_str} | {tst_str} | {wg_str} | {fmt_g(0)} | {fmt_g(1)} | {fmt_g(2)} | {fmt_g(3)} |")
     print()
 
 
@@ -728,16 +877,59 @@ def check_targets(all_stats: dict) -> list:
     for level in [1, 2, 3]:
         target = LEVEL_TARGETS[level]
         fix_key = f"L{level}_fix"
-        if fix_key not in all_stats:
-            continue
-        wg_mean = all_stats[fix_key]["summary"]["wg_acc"]["mean"]
-        if wg_mean < target:
-            warnings.append(
-                f"WARN  Level {level}: recommended fix achieves WG={wg_mean:.3f} "
-                f"< target {target:.2f}. "
-                f"Consider loosening the shortcut strength or reducing the target."
-            )
+        if fix_key in all_stats:
+            wg_mean = all_stats[fix_key]["summary"]["wg_acc"]["mean"]
+            if wg_mean < target:
+                warnings.append(
+                    f"INFO  Level {level}: recommended fix achieves WG={wg_mean:.3f} "
+                    f"< target {target:.2f} (misses target)."
+                )
+            else:
+                warnings.append(
+                    f"INFO  Level {level}: recommended fix achieves WG={wg_mean:.3f} "
+                    f">= target {target:.2f} (clears target)."
+                )
+        loss_key = f"L{level}_loss_only"
+        if loss_key in all_stats:
+            wg_mean = all_stats[loss_key]["summary"]["wg_acc"]["mean"]
+            if wg_mean >= target:
+                warnings.append(
+                    f"INFO  Level {level}: loss_only achieves WG={wg_mean:.3f} "
+                    f">= target {target:.2f} (reaches target)."
+                )
     return warnings
+
+
+def save_level_results(level: int, level_stats: dict, cue_audit: dict):
+    path = RESULTS_DIR / f"results_L{level}.json"
+    data = dict(level_stats)
+    if cue_audit:
+        data["_cue_audit_reports"] = {str(level): cue_audit}
+    with open(path, "w") as f:
+        json.dump(data, f, indent=2)
+
+
+def merge_all_results() -> dict:
+    merged = {}
+    cue_audits = {}
+    for lvl in [1, 2, 3]:
+        p = RESULTS_DIR / f"results_L{lvl}.json"
+        if p.exists():
+            try:
+                with open(p, "r") as f:
+                    d = json.load(f)
+                if "_cue_audit_reports" in d:
+                    cue_audits.update(d.pop("_cue_audit_reports"))
+                merged.update(d)
+                print(f"Loaded {p} ({len(d)} conditions)")
+            except Exception as e:
+                print(f"Error loading {p}: {e}")
+    merged["_cue_audit_reports"] = cue_audits
+    main_path = RESULTS_DIR / "results.json"
+    with open(main_path, "w") as f:
+        json.dump(merged, f, indent=2)
+    print(f"Merged all per-level results into {main_path} ({len(merged)} total keys)")
+    return merged
 
 
 def main():
@@ -751,104 +943,116 @@ def main():
         help="Override epochs for all conditions (useful for quick tests)",
     )
     parser.add_argument(
+        "--conditions",
+        nargs="+",
+        type=str,
+        default=None,
+        help="Run only specific conditions",
+    )
+    parser.add_argument(
         "--skip-existing",
         action="store_true",
-        help="Skip conditions that already have all requested seeds in results.json",
+        help="Skip conditions that already have all requested seeds in results_L{level}.json",
+    )
+    parser.add_argument(
+        "--merge",
+        action="store_true",
+        help="Merge results_L*.json into results.json and generate table without running training",
     )
     args = parser.parse_args()
 
-    json_path = RESULTS_DIR / "results.json"
-    all_stats = {}
-    if json_path.exists():
-        try:
-            with open(json_path, "r") as f:
-                all_stats = json.load(f)
-            print(f"Loaded existing results from {json_path} ({len(all_stats)} keys)")
-        except Exception as e:
-            print(f"Warning: could not load existing {json_path}: {e}")
+    if args.merge:
+        merged = merge_all_results()
+        for lvl in [1, 2, 3]:
+            if any(k.startswith(f"L{lvl}_") for k in merged):
+                plot_group_bars(merged, lvl, DOCS_DIR / f"level{lvl}_groups.png")
+                plot_comparison(merged, lvl, DOCS_DIR / f"level{lvl}_comparison.png")
+        print_table(merged)
+        print_markdown_table(merged)
+        for w in check_targets(merged):
+            print(w)
+        return
 
-    cue_audit_reports = all_stats.get("_cue_audit_reports", {})
-    fix_results_by_level = {}
-    base_results_by_level = {}
-
-    conditions = [
+    all_conditions = [
         "baseline_head",
         "ctrl_lb",
         "aug_only",
         "loss_only",
         "fix",
+        "oracle_plain",
         "oracle",
         "strong_aug_only",
         "strong_aug_loss",
+        "pre_only",
+        "pre_loss",
     ]
-
-    print("\n" + "=" * 60)
-    print("  STEP 4: AUGMENTATION CUE SURVIVAL AUDIT (200 SAMPLES)")
-    print("=" * 60)
-    for level in args.levels:
-        lvl_k = str(level)
-        if lvl_k in cue_audit_reports or level in cue_audit_reports:
-            report = cue_audit_reports.get(lvl_k, cue_audit_reports.get(level))
-            print(f"Level {level} Cue Audit (cached): {report['details']}")
-        else:
-            report = audit_cue_survival(level, n_samples=200)
-            cue_audit_reports[lvl_k] = report
-            print(f"Level {level} Cue Audit: {report['details']}")
-
-    def _persist():
-        all_stats["_cue_audit_reports"] = cue_audit_reports
-        with open(json_path, "w") as f:
-            json.dump(all_stats, f, indent=2)
+    conditions_to_run = args.conditions if args.conditions else all_conditions
 
     for level in args.levels:
+        level_file = RESULTS_DIR / f"results_L{level}.json"
+        level_stats = {}
+        level_cue_audit = {}
+        if level_file.exists():
+            try:
+                with open(level_file, "r") as f:
+                    level_stats = json.load(f)
+                if "_cue_audit_reports" in level_stats:
+                    level_cue_audit = level_stats.pop("_cue_audit_reports").get(str(level), {})
+                print(f"Loaded existing level {level} results from {level_file} ({len(level_stats)} keys)")
+            except Exception as e:
+                print(f"Warning: could not load existing {level_file}: {e}")
+
+        print("\n" + "=" * 60)
+        print(f"  AUGMENTATION CUE SURVIVAL AUDIT: LEVEL {level} (200 SAMPLES)")
+        print("=" * 60)
+        cue_report = audit_cue_survival(level, n_samples=200)
+        level_cue_audit = cue_report
+        print(f"Level {level} Cue Audit: {cue_report['details']}")
+
         print(f"\n{'='*60}")
         print(f"  LEVEL {level} MATCHED CONTROLS & EXPERIMENTS")
         print(f"{'='*60}")
 
         tr_ds, va_ds, te_ds = build_datasets(level, seed=42)
+        base_r = None
+        fix_r = None
 
-        for cond in conditions:
+        for cond in conditions_to_run:
             key = f"L{level}_{cond}"
-            if args.skip_existing and key in all_stats:
-                existing_seeds = set(all_stats[key].get("seeds", []))
+            if args.skip_existing and key in level_stats:
+                existing_seeds = set(level_stats[key].get("seeds", []))
                 if set(args.seeds).issubset(existing_seeds):
-                    print(f"\n  -- {cond} (already present in results.json, skipping) --")
+                    print(f"\n  -- {cond} (already present in {level_file.name}, skipping) --")
                     continue
 
             print(f"\n  -- {cond} --")
             stats, res0 = run_condition(
                 level, cond, args.seeds, epochs_override=args.epochs
             )
-            all_stats[key] = stats
+            level_stats[key] = stats
             if cond == "baseline_head":
-                all_stats[f"L{level}_baseline"] = stats
-                base_results_by_level[level] = res0
+                level_stats[f"L{level}_baseline"] = stats
+                base_r = res0
             elif cond == "fix":
-                fix_results_by_level[level] = res0
+                fix_r = res0
 
-            _persist()
-            print(f"  [Checkpoint saved to {json_path}]")
+            save_level_results(level, level_stats, level_cue_audit)
+            print(f"  [Checkpoint saved to {level_file}]")
 
-        base_r = base_results_by_level.get(level)
-        fix_r = fix_results_by_level.get(level)
-
-        plot_group_bars(all_stats, level, DOCS_DIR / f"level{level}_groups.png")
-        plot_comparison(all_stats, level, DOCS_DIR / f"level{level}_comparison.png")
+        plot_group_bars(level_stats, level, DOCS_DIR / f"level{level}_groups.png")
+        plot_comparison(level_stats, level, DOCS_DIR / f"level{level}_comparison.png")
         if base_r is not None and fix_r is not None:
             save_gradcam_examples(level, base_r, fix_r, te_ds, DOCS_DIR)
 
-    _persist()
-    print(f"\nSaved final results to {json_path}")
+    merged = merge_all_results()
+    print_table(merged)
+    print_markdown_table(merged)
 
-    print_table(all_stats)
-    print_markdown_table(all_stats)
-
-    warnings = check_targets(all_stats)
+    warnings = check_targets(merged)
     if warnings:
         print("\n".join(warnings))
-    else:
-        print("All level targets are reachable with the documented fix.")
 
 
 if __name__ == "__main__":
     main()
+
