@@ -387,9 +387,10 @@ TABLE_CONDITIONS = [
 ]
 
 
-def audit_cue_survival(level: int, n_samples: int = 200) -> dict:
+def audit_cue_survival(level: int, n_samples: int = 200, n_draws: int = 10) -> dict:
     """
-    Measure on 200 augmented training images how often the planted shortcut cue survives.
+    Measure on 200 augmented training images how often the planted shortcut cue survives,
+    averaged over n_draws random augmentation draws.
     - Level 1: mean blue-minus-red channel gap per class.
     - Level 2: mean blue-minus-red channel gap in top-left 8x8 region per class.
     - Level 3: stripe-frequency energy before vs after.
@@ -402,38 +403,42 @@ def audit_cue_survival(level: int, n_samples: int = 200) -> dict:
     imgs = torch.stack([tr_ds[i][0].float() / 255.0 for i in idxs])
     lbls = torch.tensor([tr_ds[i][1] for i in idxs])
 
-    torch.manual_seed(42)
-    std_aug_fn = _aug_only_cfg(level, 42)
-    std_aug = build_augmentation_transform(
-        use_color_jitter=std_aug_fn.use_color_jitter,
-        use_random_gray=std_aug_fn.use_random_gray,
-        use_random_crop=std_aug_fn.use_random_crop,
-        use_random_erasing=std_aug_fn.use_random_erasing,
-        use_hflip=std_aug_fn.use_hflip,
-        use_gaussian_noise=std_aug_fn.use_gaussian_noise,
-        aug_strength=std_aug_fn.aug_strength,
-        image_size=std_aug_fn.image_size,
-    )
-    aug_std = std_aug(imgs) if std_aug is not None else imgs.clone()
-
-    torch.manual_seed(42)
+    std_cfg = _aug_only_cfg(level, 42)
     strong_aug = get_strong_aug(level)
-    aug_strong = strong_aug(imgs)
 
-    report = {"level": level, "n_samples": len(idxs)}
+    report = {"level": level, "n_samples": len(idxs), "n_draws": n_draws}
 
     if level == 1:
         cat_bmr_before = (imgs[lbls == 0][:, 2] - imgs[lbls == 0][:, 0]).mean().item()
         dog_bmr_before = (imgs[lbls == 1][:, 2] - imgs[lbls == 1][:, 0]).mean().item()
         gap_before = cat_bmr_before - dog_bmr_before
 
-        cat_bmr_std = (aug_std[lbls == 0][:, 2] - aug_std[lbls == 0][:, 0]).mean().item()
-        dog_bmr_std = (aug_std[lbls == 1][:, 2] - aug_std[lbls == 1][:, 0]).mean().item()
-        gap_std = cat_bmr_std - dog_bmr_std
+        std_gaps, strong_gaps = [], []
+        for draw in range(n_draws):
+            torch.manual_seed(42 + draw)
+            std_aug = build_augmentation_transform(
+                use_color_jitter=std_cfg.use_color_jitter,
+                use_random_gray=std_cfg.use_random_gray,
+                use_random_crop=std_cfg.use_random_crop,
+                use_random_erasing=std_cfg.use_random_erasing,
+                use_hflip=std_cfg.use_hflip,
+                use_gaussian_noise=std_cfg.use_gaussian_noise,
+                aug_strength=std_cfg.aug_strength,
+                image_size=std_cfg.image_size,
+            )
+            aug_std = std_aug(imgs) if std_aug is not None else imgs.clone()
+            cat_std = (aug_std[lbls == 0][:, 2] - aug_std[lbls == 0][:, 0]).mean().item()
+            dog_std = (aug_std[lbls == 1][:, 2] - aug_std[lbls == 1][:, 0]).mean().item()
+            std_gaps.append(cat_std - dog_std)
 
-        cat_bmr_strong = (aug_strong[lbls == 0][:, 2] - aug_strong[lbls == 0][:, 0]).mean().item()
-        dog_bmr_strong = (aug_strong[lbls == 1][:, 2] - aug_strong[lbls == 1][:, 0]).mean().item()
-        gap_strong = cat_bmr_strong - dog_bmr_strong
+            torch.manual_seed(42 + draw)
+            aug_strong = strong_aug(imgs)
+            cat_str = (aug_strong[lbls == 0][:, 2] - aug_strong[lbls == 0][:, 0]).mean().item()
+            dog_str = (aug_strong[lbls == 1][:, 2] - aug_strong[lbls == 1][:, 0]).mean().item()
+            strong_gaps.append(cat_str - dog_str)
+
+        gap_std = sum(std_gaps) / len(std_gaps)
+        gap_strong = sum(strong_gaps) / len(strong_gaps)
 
         report.update({
             "metric": "mean_blue_minus_red_gap",
@@ -442,24 +447,42 @@ def audit_cue_survival(level: int, n_samples: int = 200) -> dict:
             "std_retention_pct": round((gap_std / gap_before) * 100, 1) if gap_before else 0.0,
             "after_strong": round(gap_strong, 4),
             "strong_retention_pct": round((gap_strong / gap_before) * 100, 1) if gap_before else 0.0,
-            "details": f"Cat B-R: {cat_bmr_before:+.3f} -> {cat_bmr_std:+.3f} -> {cat_bmr_strong:+.3f} | Dog B-R: {dog_bmr_before:+.3f} -> {dog_bmr_std:+.3f} -> {dog_bmr_strong:+.3f}",
+            "details": f"B-R gap: {gap_before:.4f} -> {gap_std:.4f} ({gap_std/gap_before*100:.1f}%) -> {gap_strong:.4f} ({gap_strong/gap_before*100:.1f}%)",
         })
     elif level == 2:
         patch = imgs[:, :, :8, :8]
-        patch_std = aug_std[:, :, :8, :8]
-        patch_strong = aug_strong[:, :, :8, :8]
-
         cat_bmr_before = (patch[lbls == 0][:, 2] - patch[lbls == 0][:, 0]).mean().item()
         dog_bmr_before = (patch[lbls == 1][:, 2] - patch[lbls == 1][:, 0]).mean().item()
         gap_before = cat_bmr_before - dog_bmr_before
 
-        cat_bmr_std = (patch_std[lbls == 0][:, 2] - patch_std[lbls == 0][:, 0]).mean().item()
-        dog_bmr_std = (patch_std[lbls == 1][:, 2] - patch_std[lbls == 1][:, 0]).mean().item()
-        gap_std = cat_bmr_std - dog_bmr_std
+        std_gaps, strong_gaps = [], []
+        for draw in range(n_draws):
+            torch.manual_seed(42 + draw)
+            std_aug = build_augmentation_transform(
+                use_color_jitter=std_cfg.use_color_jitter,
+                use_random_gray=std_cfg.use_random_gray,
+                use_random_crop=std_cfg.use_random_crop,
+                use_random_erasing=std_cfg.use_random_erasing,
+                use_hflip=std_cfg.use_hflip,
+                use_gaussian_noise=std_cfg.use_gaussian_noise,
+                aug_strength=std_cfg.aug_strength,
+                image_size=std_cfg.image_size,
+            )
+            aug_std = std_aug(imgs) if std_aug is not None else imgs.clone()
+            p_std = aug_std[:, :, :8, :8]
+            cat_std = (p_std[lbls == 0][:, 2] - p_std[lbls == 0][:, 0]).mean().item()
+            dog_std = (p_std[lbls == 1][:, 2] - p_std[lbls == 1][:, 0]).mean().item()
+            std_gaps.append(cat_std - dog_std)
 
-        cat_bmr_strong = (patch_strong[lbls == 0][:, 2] - patch_strong[lbls == 0][:, 0]).mean().item()
-        dog_bmr_strong = (patch_strong[lbls == 1][:, 2] - patch_strong[lbls == 1][:, 0]).mean().item()
-        gap_strong = cat_bmr_strong - dog_bmr_strong
+            torch.manual_seed(42 + draw)
+            aug_strong = strong_aug(imgs)
+            p_str = aug_strong[:, :, :8, :8]
+            cat_str = (p_str[lbls == 0][:, 2] - p_str[lbls == 0][:, 0]).mean().item()
+            dog_str = (p_str[lbls == 1][:, 2] - p_str[lbls == 1][:, 0]).mean().item()
+            strong_gaps.append(cat_str - dog_str)
+
+        gap_std = sum(std_gaps) / len(std_gaps)
+        gap_strong = sum(strong_gaps) / len(strong_gaps)
 
         report.update({
             "metric": "top_left_8x8_blue_minus_red_gap",
@@ -485,8 +508,28 @@ def audit_cue_survival(level: int, n_samples: int = 200) -> dict:
             return sum(energies) / len(energies)
 
         e_before = stripe_energy(imgs, lbls)
-        e_std = stripe_energy(aug_std, lbls)
-        e_strong = stripe_energy(aug_strong, lbls)
+        std_gaps, strong_gaps = [], []
+        for draw in range(n_draws):
+            torch.manual_seed(42 + draw)
+            std_aug = build_augmentation_transform(
+                use_color_jitter=std_cfg.use_color_jitter,
+                use_random_gray=std_cfg.use_random_gray,
+                use_random_crop=std_cfg.use_random_crop,
+                use_random_erasing=std_cfg.use_random_erasing,
+                use_hflip=std_cfg.use_hflip,
+                use_gaussian_noise=std_cfg.use_gaussian_noise,
+                aug_strength=std_cfg.aug_strength,
+                image_size=std_cfg.image_size,
+            )
+            aug_std = std_aug(imgs) if std_aug is not None else imgs.clone()
+            std_gaps.append(stripe_energy(aug_std, lbls))
+
+            torch.manual_seed(42 + draw)
+            aug_strong = strong_aug(imgs)
+            strong_gaps.append(stripe_energy(aug_strong, lbls))
+
+        e_std = sum(std_gaps) / len(std_gaps)
+        e_strong = sum(strong_gaps) / len(strong_gaps)
 
         report.update({
             "metric": "stripe_frequency_energy_fft2",

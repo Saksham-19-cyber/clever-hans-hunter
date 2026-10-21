@@ -16,9 +16,6 @@
 | Course Module | How It Appears in the Game |
 |---|---|
 | **Transfer Learning** | ResNet18 pre-trained on ImageNet is fine-tuned on a 2-class (cat vs dog) subset of CIFAR-10. Three trainable-depth modes show how backbone reuse trades off speed vs performance. |
-| Course Module | How It Appears in the Game |
-|---|---|
-| **Transfer Learning** | ResNet18 pre-trained on ImageNet is fine-tuned on a 2-class (cat vs dog) subset of CIFAR-10. Three trainable-depth modes show how backbone reuse trades off speed vs performance. |
 | **Data Augmentation** | Six augmentations can be toggled: ColorJitter, RandomErasing, RandomGrayscale, Gaussian Noise, etc., with continuous strength sliders. As our empirical audits show, standard augmentations alone leave substantial shortcut signals intact and are insufficient to break shortcut reliance. |
 | **Loss Functions** | Three loss functions are selectable: plain cross-entropy, class-weighted CE, and group-reweighted CE. Group-reweighted loss is the primary effective lever for mitigating shortcuts. |
 | **Metrics & Evaluation** | Validation accuracy looks deceptively high (≈80–95 %). Worst-group accuracy on the test set (where the shortcut is broken) exposes catastrophic failure. The game's score is worst-group accuracy, not average accuracy. |
@@ -43,11 +40,13 @@ The shortcut is present (and correlated with the label) 95 % of the time in trai
 
 The full experimental evaluation is run across 3 random seeds (`42`, `1`, `2`) using `python results.py` (2 epochs per condition). Wilson 95% confidence intervals are computed per seed using each group's test size ($n \approx 250$) and reported as the unpooled range $[min\_lo, max\_hi]$ across seeds (counts are not pooled across seeds).
 
-> **CI caveat:** All conditions share the same test set. Confidence intervals account for within-condition binomial uncertainty but do not correct for the shared-test-set multiple-comparison dependency.
+> **Evaluation & Budget Caveats:**
+> - **2-Epoch Training Budget:** All benchmark conditions use a fixed 2-epoch budget to emulate realistic, fast in-app player turns (~1–3 minutes on 2 CPU threads). Models demonstrate early-phase shortcut learning and mitigation, but may not reflect asymptotic infinite-epoch convergence.
+> - **Shared Test Set & Post-Hoc Target Tuning:** All random seeds and ablation conditions share the same fixed test split. Level targets (55% for L1, 60% for L2, 52% for L3) were tuned post-hoc based on initial empirical measurements on this test distribution rather than an isolated tuning split. Wilson 95% confidence intervals reflect within-condition binomial sample variance but do not correct for repeated comparisons on a shared test split.
 
 ### Measured Accuracy Table (Mean ± Std over Seeds 42, 1, 2)
 
-| Level | Condition | Val Acc | Test Avg | WG Acc (95% CI) | G0 Cat (no SC) | G1 Cat (+SC) | G2 Dog (no SC) | G3 Dog (+SC) |
+| Level | Condition | Val Acc | Test Avg | WG Acc (range of per-seed 95% Wilson CIs) | G0 Cat (no SC) | G1 Cat (+SC) | G2 Dog (no SC) | G3 Dog (+SC) |
 |:---:|:---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
 | **1** | Baseline (head only) | 0.89 ± 0.01 | 0.53 ± 0.01 | **0.09 ± 0.01** [0.05, 0.15] | 0.09 [0.05, 0.15] | 0.91 [0.86, 0.96] | 0.20 [0.14, 0.27] | 0.93 [0.87, 0.96] |
 | **1** | Ctrl (last block, no aug) | 0.95 ± 0.00 | 0.59 ± 0.01 | **0.13 ± 0.01** [0.08, 0.18] | 0.13 [0.08, 0.18] | 0.97 [0.93, 0.99] | 0.30 [0.20, 0.41] | 0.99 [0.96, 1.00] |
@@ -85,28 +84,28 @@ The full experimental evaluation is run across 3 random seeds (`42`, `1`, `2`) u
 
 *All conditions are evaluated across random seeds 42, 1, and 2 (2 epochs per condition). Group counts are ~250 test samples per group; 95% Wilson CIs are evaluated per seed and reported as unpooled ranges across seeds.*
 
-### Augmentation Cue Survival Audit (200 Training Images)
+### Augmentation Cue Survival Audit (200 Training Images, Averaged over 10 Draws)
 
 | Level | Shortcut Signal | Before Aug | After Std Aug | Retention | After Strong Aug (Prob) | Retention |
 |:---:|:---|:---:|:---:|:---:|:---:|:---:|
-| **1** | Mean Blue-minus-Red gap (cat − dog) | 0.5395 | 0.5625 | **104.3 %** | 0.0000 ($p=1.0$) | **0.0 %** |
-| **2** | Top-left 8×8 Mean Blue-minus-Red gap | 1.4240 | 1.2728 | **89.4 %** | 0.2160 ($p=0.85$) | **15.2 %** |
-| **3** | Stripe-frequency FFT energy | 11 753.1 | 11 599.9 | **98.7 %** | 270.1 ($p=1.0$) | **2.3 %** |
+| **1** | Mean Blue-minus-Red gap (cat − dog) | 0.5395 | 0.4195 | **77.8 %** | 0.0000 ($p=1.0$) | **0.0 %** |
+| **2** | Top-left 8×8 Mean Blue-minus-Red gap | 1.4240 | 0.8779 | **61.6 %** | 0.2280 ($p=0.85$) | **16.0 %** |
+| **3** | Stripe-frequency FFT energy | 11 753.1 | 11 591.0 | **98.6 %** | 270.1 ($p=1.0$) | **2.3 %** |
 
-Empirical cue audits clarify why standard augmentations are ineffective:
-- In Level 1, standard ColorJitter leaves 104.3% of the background blue-vs-red gap intact (the cue survives completely).
-- In Level 2, standard augmentations leave 89.4% of the corner color gap intact.
-- In Level 3, standard noise retains 98.7% of FFT stripe energy.
-- Strong targeted transforms destroy the cue (0% on L1, 15.2% on L2, 2.3% on L3). However, applying strong augmentation only at train time introduces a severe train/eval distribution mismatch.
+Empirical cue audits (averaged across 10 independent augmentation draws) clarify why standard augmentations are ineffective:
+- In Level 1, standard ColorJitter leaves 77.8% of the background blue-vs-red gap intact (the cue survives substantially).
+- In Level 2, standard augmentations leave 61.6% of the corner color gap intact.
+- In Level 3, standard noise retains 98.6% of FFT stripe energy.
+- Strong targeted transforms destroy the cue (0.0% on L1, 16.0% on L2, 2.3% on L3). However, applying strong augmentation only at train time introduces a severe train/eval distribution mismatch.
 
 ### Key Findings & Honest Failure Modes
 
 1. **Validation Accuracy is Deceptive**: Across all three levels, baseline models score **77–95 %** validation accuracy while catastrophically failing on counter-shortcut test groups (**9–41 % worst-group accuracy**). High validation accuracy directly masks shortcut reliance.
 2. **Group-Reweighted Loss is the Effective Lever**: Group-reweighted loss alone (`loss_only`) reaches the target across all three levels: Level 1 (62.5% ≥ 55%), Level 2 (68.0% ≥ 60%), and Level 3 (60.9% ≥ 52%).
 3. **Augmentation Alone Fails and Hurts the Fix on L2/L3**: Standard augmentation alone (`aug_only`) achieves only **12–20 %** worst-group accuracy. Adding standard augmentation to the loss (`Recommended Fix`) degrades worst-group accuracy on Level 2 (52.5% vs 68.0%) and Level 3 (51.2% vs 60.9%), causing the "fix" to **miss the Level 2 (60%) and Level 3 (52%) targets**.
-4. **Train/Eval Mismatch in Train-Only Strong Augmentation**: When strong transforms are applied only at train time (`strong_aug_only`), the model experiences an out-of-distribution test shift. On Level 1, validation accuracy collapses (individual seed runs drop to 47.6%, which is below random chance), and worst-group accuracy falls to 7.0% on L1 and 4.0% on L3. When the exact same transforms are applied at BOTH train and eval as deterministic pre-processing (`pre_only`, `pre_loss`), distribution alignment is maintained, achieving **67–78 %** worst-group accuracy on Levels 1 and 2, and **48–66 %** on Level 3.
-5. **Deeper Fine-Tuning Accelerates Shortcut Exploitation**: Fine-tuning deeper layers without reweighting (`ctrl_lb`) merely hastens shortcut memorization, dropping worst-group accuracy to 12–14% while pushing validation accuracy to 95%.
-6. **Plain Oracle Upper Bound**: An oracle model trained on balanced data without augmentation (`oracle_plain`) establishes an upper bound of 75–78% worst-group accuracy. Adding standard augmentations to the oracle (`oracle (with fix aug)`) degrades performance across all levels (to 60–75%), confirming that augmentation at these strengths hurts rather than helps.
+4. **Train/Eval Mismatch in Train-Only Strong Augmentation vs. Preprocessing**: When strong transforms are applied only at train time (`strong_aug_only`), the model experiences an out-of-distribution test shift. On Level 1, validation accuracy collapses (individual seed runs drop to 47.6%, which is below random chance), and worst-group accuracy falls to 7.0% on L1 and 4.0% on L3. In Level 2, train-only corner erasing (`EraseTopLeft` at $p=0.85$) reaches 45.1% worst-group accuracy alone and 68.1% when combined with group reweighting. When identical masking is applied deterministically at BOTH train and eval (`pre_only`, `pre_loss`), the shortcut is neutralized without distribution mismatch (achieving **78.1 %** worst-group accuracy on L2, **67–70 %** on L1, and **48–66 %** on L3). **Crucial Trade-off:** Deterministic preprocessing requires exact prior knowledge of the shortcut cue (e.g. knowing the precise 8×8 top-left patch location) and permanently alters evaluation inputs, which modifies the evaluation domain and would destructively erase true object features on uncorrupted test images.
+5. **Deeper Fine-Tuning Accelerates Shortcut Exploitation on Complex Cues**: Fine-tuning deeper layers without reweighting (`ctrl_lb`) gives the backbone additional capacity to memorize the shortcut. On Levels 2 and 3, worst-group accuracy collapses from 41% and 36% (baseline) down to 12% and 14%, while driving validation accuracy to 95% across all levels (Level 1 remains severely degraded at 13%).
+6. **Plain Oracle Upper Bound**: An oracle model trained on balanced data where the shortcut is independent of class labels (`oracle_plain`) establishes an upper bound of 75–78% worst-group accuracy across all levels. Adding standard augmentations to the oracle (`oracle (with fix aug)`) degrades worst-group performance across all levels (dropping to 75% on L1, 63% on L2, and 60% on L3), confirming that standard augmentations at these strengths penalize optimization rather than providing helpful invariance.
 
 ---
 
@@ -154,6 +153,8 @@ Empirical cue audits clarify why standard augmentations are ineffective:
 - **Synthetic Shortcuts**: The shortcuts (color tints, corner patches, and synthetic stripe grids) are artificially planted to provide clear pedagogical contrasts. Natural shortcuts (e.g. background grass, camera watermarks) are more subtle and multimodal.
 - **Image Resolution**: CIFAR-10 images are upscaled to 64×64. Due to low native resolution, Grad-CAM heatmaps at `layer4` are coarse.
 - **Binary Classification**: The demonstration uses a 2-class subset (cat vs dog) to ensure fast CPU-bound training runs under ~3 minutes.
+- **2-Epoch Budget**: All benchmark conditions are evaluated strictly under a 2-epoch budget to fit within interactive browser and classroom demonstration constraints. Asymptotic convergence at larger epoch budgets (e.g. 4+ epochs) may shift absolute numbers.
+- **Shared Test Set & Target Calibration**: Level clearing targets (55% for Level 1, 60% for Level 2, 52% for Level 3) were calibrated against the shared test set to balance pedagogical solvability with challenge. In production ML workflows, test sets should remain strictly unexamined until final deployment validation.
 
 ---
 
@@ -198,8 +199,9 @@ Measured on CPU via `python measure_memory.py` using `psutil` process RSS (uint8
 | last_block training run | 504.0 MB |
 | full training run | 516.2 MB |
 | Grad-CAM | 314.8 MB |
+| Overall Peak Process RSS | **529.1 MB** (Budget: 800 MB) |
 
-Dataset tensors are stored as **uint8** (3×64×64 per image) and converted to float32 per batch in the collate function — peak RSS is from the initial CIFAR-10 array concatenation, not from holding float32 images.
+Dataset tensors are stored as **uint8** (3×64×64 per image) and converted to float32 per batch in the collate function — peak RSS is from the initial CIFAR-10 array concatenation, not from holding float32 images. Peak memory stays safely within Streamlit Community Cloud's 1 GB container memory limit.
 
 ---
 
@@ -242,7 +244,11 @@ clever_hans_hunter/
 ├── docs/                  – Generated evaluation figures and Grad-CAM comparisons
 ├── results/
 │   ├── memory.json        – Memory profiling data
-│   └── results.json       – Empirical metrics across all seeds and conditions
+│   ├── results.json       – Empirical metrics across all seeds and conditions
+│   ├── results_L1.json    – Level 1 per-seed evaluation records
+│   ├── results_L2.json    – Level 2 per-seed evaluation records
+│   ├── results_L3.json    – Level 3 per-seed evaluation records
+│   └── timing_threads2.json – Per-mode CPU runtime benchmarks (2 threads)
 └── tests/
     ├── test_basics.py     – Sanity checks for data, shapes, and shortcuts
     └── test_game_loop.py  – Unit tests for game loop functions
