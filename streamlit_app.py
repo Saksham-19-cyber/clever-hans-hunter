@@ -144,11 +144,11 @@ def cached_baseline(level: int):
         try:
             ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
             if ckpt.get("test_fingerprint") == cur_fp:
-                if "model_state_dict" in ckpt:
-                    model.load_state_dict(ckpt["model_state_dict"])
-                    needs_retrain = False
-                elif "fc_state_dict" in ckpt:
+                if "fc_state_dict" in ckpt:
                     model.fc.load_state_dict(ckpt["fc_state_dict"])
+                    needs_retrain = False
+                elif "model_state_dict" in ckpt:
+                    model.load_state_dict(ckpt["model_state_dict"])
                     needs_retrain = False
                 history = ckpt.get("history", [])
         except Exception:
@@ -171,7 +171,6 @@ def cached_baseline(level: int):
             torch.save({
                 "level": level,
                 "test_fingerprint": cur_fp,
-                "model_state_dict": model.state_dict(),
                 "fc_state_dict": model.fc.state_dict(),
                 "history": history,
             }, ckpt_path)
