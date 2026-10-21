@@ -127,8 +127,15 @@ def cached_datasets(level: int):
 
 def compute_test_fingerprint(test_ds) -> str:
     import hashlib
-    raw = bytes(test_ds.labels) + bytes(test_ds.group_ids)
-    return hashlib.sha256(raw).hexdigest()
+    h = hashlib.sha256()
+    h.update(bytes(test_ds.labels))
+    h.update(bytes(test_ds.group_ids))
+    for img in test_ds.images:
+        if isinstance(img, torch.Tensor):
+            h.update(img.numpy().tobytes())
+        elif isinstance(img, np.ndarray):
+            h.update(img.tobytes())
+    return h.hexdigest()
 
 
 @st.cache_resource(show_spinner="Evaluating baseline on current test set...")
@@ -138,19 +145,45 @@ def cached_baseline(level: int):
     ckpt_path = CHECKPOINTS_DIR / f"level{level}_baseline.pt"
     model = build_model(finetune_mode="head_only", pretrained=True)
     history = []
+    cached_metrics = None
     needs_retrain = True
 
     if ckpt_path.exists():
         try:
             ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
             if ckpt.get("test_fingerprint") == cur_fp:
+                load_dict = {}
                 if "fc_state_dict" in ckpt:
-                    model.fc.load_state_dict(ckpt["fc_state_dict"])
-                    needs_retrain = False
+                    for k, v in ckpt["fc_state_dict"].items():
+                        load_dict[k if k.startswith("fc.") else f"fc.{k}"] = v
+                if "bn_buffers" in ckpt:
+                    load_dict.update(ckpt["bn_buffers"])
+                elif "bn_state_dict" in ckpt:
+                    load_dict.update(ckpt["bn_state_dict"])
                 elif "model_state_dict" in ckpt:
-                    model.load_state_dict(ckpt["model_state_dict"])
-                    needs_retrain = False
+                    load_dict.update(ckpt["model_state_dict"])
+
+                for k, v in ckpt.items():
+                    if k.endswith(("running_mean", "running_var", "num_batches_tracked")):
+                        load_dict[k] = v
+
+                missing, unexpected = model.load_state_dict(load_dict, strict=False)
+                expected_keys = [
+                    k for k in model.state_dict().keys()
+                    if k.startswith("fc.") or k.endswith(("running_mean", "running_var", "num_batches_tracked"))
+                ]
+                unexpected_missing = [k for k in expected_keys if k in missing]
+                assert len(unexpected) == 0, f"Unexpected keys in checkpoint: {unexpected}"
+                assert len(unexpected_missing) == 0, f"Expected keys missing: {unexpected_missing}"
+
+                needs_retrain = False
                 history = ckpt.get("history", [])
+
+                eval_cache = ckpt.get("eval_cache", {})
+                if cur_fp in eval_cache:
+                    cached_metrics = eval_cache[cur_fp]
+                elif "cached_eval" in ckpt and ckpt.get("test_fingerprint") == cur_fp:
+                    cached_metrics = ckpt["cached_eval"]
         except Exception:
             needs_retrain = True
 
@@ -166,33 +199,66 @@ def cached_baseline(level: int):
         res = run_training(cfg, tr, va, te)
         model = res.model
         history = res.history
+        cached_metrics = None
+
+    if cached_metrics is not None:
+        val_acc = cached_metrics["val_acc"]
+        test_acc = cached_metrics["test_avg_acc"]
+        worst_group = cached_metrics["worst_group_acc"]
+        group_accs = {int(k): float(v) for k, v in cached_metrics["group_accs"].items()}
+        cm = np.array(cached_metrics["confusion_matrix"])
+        suspicious = cached_metrics["suspicious"]
+    else:
+        model.eval()
+        _, val_loader, test_loader = make_dataloaders(tr, va, te, batch_size=64)
+        val_acc, *_ = evaluate(model, val_loader, "cpu")
+        test_acc, test_preds, test_labels, test_groups, test_confs = evaluate(model, test_loader, "cpu")
+
+        group_accs = _compute_group_accs(test_preds, test_labels, test_groups)
+        valid_accs = [v for v in group_accs.values() if not np.isnan(v)]
+        worst_group = min(valid_accs) if valid_accs else 0.0
+        cm = _confusion_matrix(test_preds, test_labels)
+
+        suspicious = []
+        for i, (p, l, c) in enumerate(zip(test_preds, test_labels, test_confs)):
+            if p != l:
+                suspicious.append((i, l, p, c))
+        suspicious.sort(key=lambda x: -x[3])
+
+        cached_metrics = {
+            "val_acc": val_acc,
+            "test_avg_acc": test_acc,
+            "worst_group_acc": worst_group,
+            "group_accs": {int(k): float(v) for k, v in group_accs.items()},
+            "confusion_matrix": cm.tolist() if isinstance(cm, np.ndarray) else cm,
+            "suspicious": suspicious[:20],
+        }
+
         try:
             CHECKPOINTS_DIR.mkdir(parents=True, exist_ok=True)
+            existing_ckpt = {}
+            if ckpt_path.exists():
+                try:
+                    existing_ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+                except Exception:
+                    existing_ckpt = {}
+            eval_cache = existing_ckpt.get("eval_cache", {})
+            eval_cache[cur_fp] = cached_metrics
+
+            bn_buffers = {
+                k: v for k, v in model.state_dict().items()
+                if k.endswith(("running_mean", "running_var", "num_batches_tracked"))
+            }
             torch.save({
                 "level": level,
                 "test_fingerprint": cur_fp,
                 "fc_state_dict": model.fc.state_dict(),
+                "bn_buffers": bn_buffers,
                 "history": history,
+                "eval_cache": eval_cache,
             }, ckpt_path)
         except Exception:
             pass
-
-    model.eval()
-
-    _, val_loader, test_loader = make_dataloaders(tr, va, te, batch_size=64)
-    val_acc, *_ = evaluate(model, val_loader, "cpu")
-    test_acc, test_preds, test_labels, test_groups, test_confs = evaluate(model, test_loader, "cpu")
-
-    group_accs = _compute_group_accs(test_preds, test_labels, test_groups)
-    valid_accs = [v for v in group_accs.values() if not np.isnan(v)]
-    worst_group = min(valid_accs) if valid_accs else 0.0
-    cm = _confusion_matrix(test_preds, test_labels)
-
-    suspicious = []
-    for i, (p, l, c) in enumerate(zip(test_preds, test_labels, test_confs)):
-        if p != l:
-            suspicious.append((i, l, p, c))
-    suspicious.sort(key=lambda x: -x[3])
 
     return TrainResult(
         val_acc=val_acc,
