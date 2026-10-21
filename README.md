@@ -1,6 +1,6 @@
 # 🔍 Clever Hans Hunter
 
-[![Tests](https://img.shields.io/badge/tests-40%20passed-brightgreen.svg)](#test-status)
+[![Tests](https://img.shields.io/badge/tests-43%20passed-brightgreen.svg)](#test-status)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Streamlit](https://img.shields.io/badge/Streamlit-Live%20App-FF4B4B.svg)](https://clever-hans-hunter-xce4d2b8huzukgsoxkw9br.streamlit.app/)
 
@@ -24,13 +24,13 @@
 
 ## Planted Shortcuts
 
-| Level | Shortcut | Train/Val Correlation | Test Correlation | Target WG Acc | Chance Reference (1k Draws: Mean / 95th pct) |
-|---|---|---|---|---|---|
-| **1 – Color Tint** | Cat images get a blue background tint; dog images get a red tint. | 95 % | 50 % (random) | **55 %** | Mean: 46.7 % / 95th: 50.4 % |
-| **2 – Corner Patch** | A small solid-colour square (blue=cat, red=dog) in the top-left corner. | 95 % | 50 % (random) | **60 %** | Mean: 46.7 % / 95th: 50.4 % |
-| **3 – Stripe Texture** | Faint horizontal stripes overlay cat images; vertical stripes overlay dog images. | 95 % | 50 % (random) | **52 %** | Mean: 46.7 % / 95th: 50.4 % |
+| Level | Shortcut | Train/Val Correlation | Test Correlation | Target WG Acc |
+|---|---|---|---|---|
+| **1 – Color Tint** | Cat images get a blue background tint; dog images get a red tint. | 95 % | 50 % (random) | **55 %** |
+| **2 – Corner Patch** | A small solid-colour square (blue=cat, red=dog) in the top-left corner. | 95 % | 50 % (random) | **60 %** |
+| **3 – Stripe Texture** | Faint horizontal stripes overlay cat images; vertical stripes overlay dog images. | 95 % | 50 % (random) | **52 %** |
 
-The shortcut is present (and correlated with the label) 95 % of the time in train/val, but randomly assigned in the test set. Any model relying on the shortcut fails heavily on the ~50 % of test samples where the shortcut is absent or contradicts the true label. The chance reference shows that random guessing on the balanced test groups ({0: 258, 1: 242, 2: 252, 3: 248}) produces a mean worst-group accuracy of 46.7% and a 95th percentile of 50.4%; all targets require learning beyond random chance. The Level 3 target (52.0%) is within about 2 points of the random 95th percentile (50.4%), reflecting how subtle high-frequency cues make calibration challenging. In the interactive app, dataset splits and baseline initialization always use seed 42 for deterministic, reproducible classroom demonstrations.
+The shortcut is present (and correlated with the label) 95 % of the time in train/val, but randomly assigned in the test set. Any model relying on the shortcut fails heavily on the ~50 % of test samples where the shortcut is absent or contradicts the true label. The chance reference shows that random guessing on the balanced test groups ({0: 258, 1: 242, 2: 252, 3: 248}) produces a mean worst-group accuracy of 46.7% and a 95th percentile of 50.4%; all targets require learning beyond random chance. The Level 3 target (52.0%) is within about 2 points of the random 95th percentile (50.4%). In the interactive app, dataset splits and baseline initialization always use seed 42 for deterministic, reproducible classroom demonstrations.
 
 > **Note on targets:** Target worst-group accuracies (55 %, 60 %, 52 %) were set after empirical measurement. The recommended fix (group-reweighted loss + standard augmentation) clears the L1 target (62.8% ≥ 55%), but misses the L2 target (52.5% < 60%) and L3 target (51.2% < 52%). In contrast, group-reweighted loss alone (`loss_only`) reaches all three targets (L1: 62.5%, L2: 68.0%, L3: 60.9%).
 
@@ -97,7 +97,7 @@ Evaluated across seeds `42`, `1`, and `2`:
 | **3** | 52.0 % | 2 | 0.60 ± 0.01 | 0.61 ± 0.01 | **0.58 ± 0.02** | **3 / 3** (100.0 %) |
 | **3** | 52.0 % | 4 | 0.64 ± 0.01 | 0.66 ± 0.02 | **0.60 ± 0.03** | **3 / 3** (100.0 %) |
 
-*Note on Level 2 solvability:* Level 2 clears the 60% target only at 4 epochs by a margin within sampling noise (mean 60.8%, individual seed runs 62.0%, 60.1%, 60.3%), while failing all 3 seeds at 2 epochs (mean 57.2%). The in-app default budget is 2 epochs, but players can expand the budget up to 4 epochs for `head_only` to clear Level 2.
+*Note on Level 2 solvability:* Level 2 clears the 60% target only at 4 epochs by a margin within sampling noise (mean 60.8%, individual seed runs 62.0%, 60.1%, 60.3%), while failing all 3 seeds at 2 epochs (mean 57.2%). The in-app default budget is 2 epochs, but players can expand the budget up to 4 epochs for `head_only` to clear Level 2. Across all levels, clearing configurations correspond to 0.60–0.66 test average accuracy.
 
 ### Augmentation Cue Survival Audit (200 Training Images, Averaged over 10 Draws)
 
@@ -126,14 +126,16 @@ Empirical cue audits (averaged across 10 independent augmentation draws) clarify
 
 ## Visual Diagnostics & Grad-CAM Analysis
 
+Each pair below displays one test sample (the baseline model's most confidently wrong test image). The "after" model shown is the recommended fix (group loss + standard augmentation), not loss-only.
+
 ### Level 1: Color Tint
 ![Level 1 Per-Group Accuracy](docs/level1_groups.png)
 ![Level 1 Baseline vs Fix](docs/level1_comparison.png)
 
-*Grad-CAM Before Fix (Model focuses on tinted background; prediction wrong):*  
+*Grad-CAM Before Fix (Baseline on its most confidently wrong test sample):*  
 ![Level 1 Grad-CAM Before](docs/level1_gradcam_before.png)
 
-*Grad-CAM After Fix (Heatmap still shows shortcut reliance on background tint; prediction remains wrong):*  
+*Grad-CAM After Fix (Recommended Fix — group loss + standard augmentation — on the same sample):*  
 ![Level 1 Grad-CAM After](docs/level1_gradcam_after.png)
 
 ---
@@ -142,10 +144,10 @@ Empirical cue audits (averaged across 10 independent augmentation draws) clarify
 ![Level 2 Per-Group Accuracy](docs/level2_groups.png)
 ![Level 2 Baseline vs Fix](docs/level2_comparison.png)
 
-*Grad-CAM Before Fix (Heatmap shows shortcut reliance / coarse activation; prediction wrong):*  
+*Grad-CAM Before Fix (Baseline on its most confidently wrong test sample):*  
 ![Level 2 Grad-CAM Before](docs/level2_gradcam_before.png)
 
-*Grad-CAM After Fix (Heatmap still shows shortcut reliance; prediction remains wrong):*  
+*Grad-CAM After Fix (Recommended Fix — group loss + standard augmentation — on the same sample):*  
 ![Level 2 Grad-CAM After](docs/level2_gradcam_after.png)
 
 ---
@@ -154,10 +156,10 @@ Empirical cue audits (averaged across 10 independent augmentation draws) clarify
 ![Level 3 Per-Group Accuracy](docs/level3_groups.png)
 ![Level 3 Baseline vs Fix](docs/level3_comparison.png)
 
-*Grad-CAM Before Fix (Heatmap focuses on stripe texture artifacts; prediction wrong):*  
+*Grad-CAM Before Fix (Baseline on its most confidently wrong test sample):*  
 ![Level 3 Grad-CAM Before](docs/level3_gradcam_before.png)
 
-*Grad-CAM After Fix (Heatmap still shows shortcut reliance on stripe texture; prediction remains wrong):*  
+*Grad-CAM After Fix (Recommended Fix — group loss + standard augmentation — on the same sample):*  
 ![Level 3 Grad-CAM After](docs/level3_gradcam_after.png)
 
 ---
@@ -200,32 +202,33 @@ pytest tests/ -v
 ```
 
 <a id="test-status"></a>
-**Test Status**: All 40 automated unit, smoke, checkpoint, and integration tests passing (`24/24` basic checks + `9/9` game loop tests + `3/3` AppTest UI smoke tests + `4/4` baseline checkpoint verification tests).
+**Test Status**: All 43 automated unit, smoke, checkpoint, and integration tests passing (`27/27` basic checks + `9/9` game loop tests + `3/3` AppTest UI smoke tests + `4/4` baseline checkpoint verification tests).
 
 ---
 
 ## Memory Budget & Resource Profile
 
-Measured on CPU via `python measure_memory.py` using `psutil` process RSS across a single process that sequentially visits Levels 1, 2, and 3 (loading datasets and baselines), executes one `last_block` 2-epoch training run, and generates a Grad-CAM panel (from `results/memory.json`):
+Measured on CPU via `python measure_memory.py` using `psutil` process RSS across a single process that sequentially visits Levels 1, 2, and 3 (loading datasets and baselines with `max_entries=1`), executes one `last_block` 2-epoch training run, and generates a Grad-CAM panel (from `results/memory.json`):
 
 | Operation | Peak RSS |
 |---|---|
-| Import torch + streamlit | 223.3 MB |
-| Visit Level 1 (datasets + baseline) | 492.8 MB |
-| Visit Level 2 (datasets + baseline) | 602.9 MB |
-| Visit Level 3 (datasets + baseline) | 701.3 MB |
-| last_block training run (2 epochs) | 868.3 MB |
-| Grad-CAM panel generation | 868.3 MB |
-| Overall Single-Process Peak RSS | **868.3 MB** |
+| Import torch + streamlit | 223.1 MB |
+| Visit Level 1 (datasets + baseline) | 495.5 MB |
+| Visit Level 2 (datasets + baseline) | 603.3 MB |
+| Visit Level 3 (datasets + baseline) | 712.5 MB |
+| last_block training run (2 epochs) | 944.7 MB |
+| Grad-CAM panel generation | 944.7 MB |
+| Memory held by one TrainResult (model + history) | 42.7 MB (44.7 MB total) |
+| Overall Single-Process Peak RSS | **944.7 MB** |
 
-Dataset arrays are pre-extracted and loaded directly from compressed NumPy archive (`data/cifar_catdog.npz`) as **uint8** (3×64×64 per image) and converted to float32 per batch in the collate function. Peak process RSS occurs during the backward pass of `last_block` fine-tuning (868.3 MB).
+Dataset arrays are pre-extracted and loaded directly from compressed NumPy archive (`data/cifar_catdog.npz`) as **uint8** (3×64×64 per image) and converted to float32 per batch in the collate function. With `max_entries=1` on cached datasets and baselines, inactive levels are evicted when switching. Peak process RSS occurs during the backward pass of `last_block` fine-tuning (944.7 MB). One trained `TrainResult` holds 42.7 MB (dominated by the ResNet-18 model parameters and buffers).
 
 ---
 
 ## Player Controls Guide
 
 ### Fine-Tuning Depth
-- `head_only`: Fast training, freezes all ResNet layers except the final linear classifier. Max 4 epochs in the app.
+- `head_only`: Fast training, freezes all ResNet layers except the final linear classifier (running statistics in frozen BatchNorm layers continue to update). Max 4 epochs in the app.
 - `last_block`: Unfreezes `layer4` + FC layer. Allows high-level feature extraction adjustments. Max 2 epochs.
 - `full`: Unfreezes all layers. Max 1 epoch.
 
@@ -255,7 +258,8 @@ clever_hans_hunter/
 │   └── config.toml        – Headless configuration and telemetry settings
 ├── checkpoints/           – Pre-trained baseline checkpoints (level1/2/3_baseline.pt)
 ├── data/
-│   └── cifar_catdog.npz   – Pre-built cat/dog subset (17.5 MB, seed=42)
+│   ├── cifar_catdog.npz   – Pre-built cat/dog subset (17.5 MB, seed=42)
+│   └── fingerprints.json  – Pinned test set SHA-256 fingerprints per level
 ├── weights/
 │   └── resnet18_imagenet.pth – Cached ImageNet weights (44.7 MB, no download on cold start)
 ├── docs/                  – Generated evaluation figures and Grad-CAM comparisons

@@ -118,6 +118,17 @@ def measure():
     results["gradcam_peak_MB"] = peak_gradcam
     print(f"    Grad-CAM finished: peak RSS = {peak_gradcam:.1f} MB")
 
+    # 7. Memory held by one trained TrainResult (model + history)
+    param_bytes = sum(p.nelement() * p.element_size() for p in res_last.model.parameters())
+    buffer_bytes = sum(b.nelement() * b.element_size() for b in res_last.model.buffers())
+    model_bytes = param_bytes + buffer_bytes
+    history_bytes = sys.getsizeof(res_last.history) + sum(sys.getsizeof(h) for h in res_last.history)
+    cm_bytes = res_last.confusion_matrix.nbytes
+    total_held_bytes = model_bytes + history_bytes + cm_bytes
+    total_held_mb = round(total_held_bytes / (1024 * 1024), 2)
+    results["train_result_held_memory_MB"] = total_held_mb
+    print(f"[7] Memory held by one TrainResult (model + history): {total_held_mb:.2f} MB ({total_held_bytes} bytes)")
+
     overall_peak = meter.stop()
     results["overall_peak_MB"] = overall_peak
     print(f"\nOverall single-process peak RSS: {overall_peak:.1f} MB (Budget: 800 MB)")

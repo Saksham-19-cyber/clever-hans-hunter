@@ -1,9 +1,10 @@
 {
-  "import_torch_streamlit_MB": 223.3,
-  "visit_level_1_peak_MB": 492.8,
-  "visit_level_2_peak_MB": 602.9,
-  "visit_level_3_peak_MB": 701.3,
-  "last_block_2ep_peak_MB": 868.3,
-  "gradcam_peak_MB": 868.3,
-  "overall_peak_MB": 868.3
+  "import_torch_streamlit_MB": 223.1,
+  "visit_level_1_peak_MB": 495.5,
+  "visit_level_2_peak_MB": 603.3,
+  "visit_level_3_peak_MB": 712.5,
+  "last_block_2ep_peak_MB": 944.7,
+  "gradcam_peak_MB": 944.7,
+  "train_result_held_memory_MB": 42.68,
+  "overall_peak_MB": 944.7
 }
