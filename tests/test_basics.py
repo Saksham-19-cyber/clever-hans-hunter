@@ -44,6 +44,22 @@ def test_shortcut_correlation_test (level ):
     )
 
 
+@pytest.mark.parametrize("level", [1, 2, 3])
+def test_test_fingerprint_matches_pinned(level):
+    """Test set pixel and metadata fingerprint must match data/fingerprints.json exactly."""
+    import json
+    from pathlib import Path
+    from streamlit_app import compute_test_fingerprint
+    fp_path = Path(__file__).parent.parent / "data" / "fingerprints.json"
+    with open(fp_path, "r") as f:
+        pinned = json.load(f)
+    tr, va, te = build_datasets(level, seed=42)
+    cur_fp = compute_test_fingerprint(te)
+    assert cur_fp == pinned[str(level)], (
+        f"Level {level} fingerprint mismatch: got {cur_fp}, expected {pinned[str(level)]}"
+    )
+
+
 def test_group_id_values ():
     """All 4 group ids are present in the training set."""
     tr ,_ ,_ =build_datasets (1 ,seed =42 )
