@@ -1,9 +1,9 @@
 {
-  "import_torch_streamlit_MB": 222.9,
-  "dataset_load_peak_MB": 529.1,
-  "head_only_peak_MB": 304.5,
-  "last_block_peak_MB": 504.0,
-  "full_peak_MB": 516.2,
-  "gradcam_peak_MB": 314.8,
-  "overall_peak_MB": 529.1
+  "import_torch_streamlit_MB": 223.0,
+  "dataset_load_peak_MB": 390.8,
+  "head_only_peak_MB": 474.2,
+  "last_block_peak_MB": 663.4,
+  "full_peak_MB": 703.0,
+  "gradcam_peak_MB": 390.5,
+  "overall_peak_MB": 703.0
 }

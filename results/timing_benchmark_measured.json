@@ -1,0 +1,98 @@
+{
+  "head_only_2ep": {
+    "mode": "head_only",
+    "epochs": 2,
+    "times": [
+      63.98,
+      69.71,
+      70.11
+    ],
+    "median_seconds": 69.71,
+    "range_seconds": [
+      63.98,
+      70.11
+    ],
+    "val_accs": [
+      0.883,
+      0.888,
+      0.899
+    ],
+    "wg_accs": [
+      0.0775,
+      0.0969,
+      0.1047
+    ]
+  },
+  "head_only_4ep": {
+    "mode": "head_only",
+    "epochs": 4,
+    "times": [
+      130.52,
+      123.53,
+      125.75
+    ],
+    "median_seconds": 125.75,
+    "range_seconds": [
+      123.53,
+      130.52
+    ],
+    "val_accs": [
+      0.906,
+      0.902,
+      0.907
+    ],
+    "wg_accs": [
+      0.1008,
+      0.0698,
+      0.0891
+    ]
+  },
+  "last_block_2ep": {
+    "mode": "last_block",
+    "epochs": 2,
+    "times": [
+      128.72,
+      125.37,
+      124.45
+    ],
+    "median_seconds": 125.37,
+    "range_seconds": [
+      124.45,
+      128.72
+    ],
+    "val_accs": [
+      0.95,
+      0.952,
+      0.947
+    ],
+    "wg_accs": [
+      0.1279,
+      0.1357,
+      0.1163
+    ]
+  },
+  "full_1ep": {
+    "mode": "full",
+    "epochs": 1,
+    "times": [
+      96.75,
+      96.26,
+      95.34
+    ],
+    "median_seconds": 96.26,
+    "range_seconds": [
+      95.34,
+      96.75
+    ],
+    "val_accs": [
+      0.951,
+      0.946,
+      0.953
+    ],
+    "wg_accs": [
+      0.1008,
+      0.0349,
+      0.0698
+    ]
+  }
+}

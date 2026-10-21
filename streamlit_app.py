@@ -579,9 +579,9 @@ def main ():
             value =min (2 ,max_ep ),
             key =f"epochs_{ft_mode }",
             )
-            st .caption (
-            f"Capped at {max_ep } epoch{'s' if max_ep >1 else ''} for {ft_mode } "
-            f"to finish in ~3 minutes on 2 CPU threads."
+            st.caption(
+                f"Capped at {max_ep} epoch{'s' if max_ep > 1 else ''} for {ft_mode} "
+                f"to finish in ~1.1–2.2 min (measured median 64–131s on 2 CPU threads)."
             )
 
         with tc2 :
