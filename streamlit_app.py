@@ -63,9 +63,9 @@ LEVEL_SHORTCUTS ={
 }
 
 LEVEL_FIXES = {
-    1: "Group-reweighted CE loss is the effective lever (up-weights shortcut-absent groups). Augmentation did not help at the tested strengths.",
-    2: "Group-reweighted CE loss is the effective lever (up-weights shortcut-absent groups). Augmentation did not help at the tested strengths.",
-    3: "Group-reweighted CE loss is the effective lever (up-weights shortcut-absent groups). Augmentation did not help at the tested strengths.",
+    1: "Group-reweighted loss is the effective lever; standard augmentation did not help at tested strengths.",
+    2: "Group-reweighted loss is the effective lever; standard augmentation did not help at tested strengths.",
+    3: "Group-reweighted loss is the effective lever; standard augmentation did not help at tested strengths.",
 }
 
 GROUP_LABELS =[
@@ -125,49 +125,87 @@ def cached_datasets(level: int):
     return result
 
 
+def compute_test_fingerprint(test_ds) -> str:
+    import hashlib
+    raw = bytes(test_ds.labels) + bytes(test_ds.group_ids)
+    return hashlib.sha256(raw).hexdigest()
+
+
 @st.cache_resource(show_spinner="Evaluating baseline on current test set...")
-def cached_baseline (level :int ):
-    tr ,va ,te =cached_datasets (level )
-    ckpt_path =CHECKPOINTS_DIR /f"level{level }_baseline.pt"
-    model =build_model (finetune_mode ="head_only",pretrained =True )
-    history =[]
-    if ckpt_path .exists ():
-        try :
-            ckpt =torch .load (ckpt_path ,map_location ="cpu",weights_only =False )
-            if "fc_state_dict"in ckpt :
-                model .fc .load_state_dict (ckpt ["fc_state_dict"])
-            elif "model_state_dict"in ckpt :
-                model .load_state_dict (ckpt ["model_state_dict"])
-            history =ckpt .get ("history",[])
-        except Exception :
-            pass 
-    model .eval ()
+def cached_baseline(level: int):
+    tr, va, te = cached_datasets(level)
+    cur_fp = compute_test_fingerprint(te)
+    ckpt_path = CHECKPOINTS_DIR / f"level{level}_baseline.pt"
+    model = build_model(finetune_mode="head_only", pretrained=True)
+    history = []
+    needs_retrain = True
 
-    _ ,val_loader ,test_loader =make_dataloaders (tr ,va ,te ,batch_size =64 )
-    val_acc ,*_ =evaluate (model ,val_loader ,"cpu")
-    test_acc ,test_preds ,test_labels ,test_groups ,test_confs =evaluate (model ,test_loader ,"cpu")
+    if ckpt_path.exists():
+        try:
+            ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+            if ckpt.get("test_fingerprint") == cur_fp:
+                if "model_state_dict" in ckpt:
+                    model.load_state_dict(ckpt["model_state_dict"])
+                    needs_retrain = False
+                elif "fc_state_dict" in ckpt:
+                    model.fc.load_state_dict(ckpt["fc_state_dict"])
+                    needs_retrain = False
+                history = ckpt.get("history", [])
+        except Exception:
+            needs_retrain = True
 
-    group_accs =_compute_group_accs (test_preds ,test_labels ,test_groups )
-    valid_accs =[v for v in group_accs .values ()if not np .isnan (v )]
-    worst_group =min (valid_accs )if valid_accs else 0.0 
-    cm =_confusion_matrix (test_preds ,test_labels )
+    if needs_retrain:
+        cfg = TrainConfig(
+            finetune_mode="head_only",
+            optimizer="adam",
+            learning_rate=1e-3,
+            epochs=2,
+            loss_fn_name="cross_entropy",
+            seed=SEED,
+        )
+        res = run_training(cfg, tr, va, te)
+        model = res.model
+        history = res.history
+        try:
+            CHECKPOINTS_DIR.mkdir(parents=True, exist_ok=True)
+            torch.save({
+                "level": level,
+                "test_fingerprint": cur_fp,
+                "model_state_dict": model.state_dict(),
+                "fc_state_dict": model.fc.state_dict(),
+                "history": history,
+            }, ckpt_path)
+        except Exception:
+            pass
 
-    suspicious =[]
-    for i ,(p ,l ,c )in enumerate (zip (test_preds ,test_labels ,test_confs )):
-        if p !=l :
-            suspicious .append ((i ,l ,p ,c ))
-    suspicious .sort (key =lambda x :-x [3 ])
+    model.eval()
 
-    return TrainResult (
-    val_acc =val_acc ,
-    test_avg_acc =test_acc ,
-    worst_group_acc =worst_group ,
-    group_accs =group_accs ,
-    confusion_matrix =cm ,
-    history =history ,
-    model =model ,
-    suspicious =suspicious [:20 ],
+    _, val_loader, test_loader = make_dataloaders(tr, va, te, batch_size=64)
+    val_acc, *_ = evaluate(model, val_loader, "cpu")
+    test_acc, test_preds, test_labels, test_groups, test_confs = evaluate(model, test_loader, "cpu")
+
+    group_accs = _compute_group_accs(test_preds, test_labels, test_groups)
+    valid_accs = [v for v in group_accs.values() if not np.isnan(v)]
+    worst_group = min(valid_accs) if valid_accs else 0.0
+    cm = _confusion_matrix(test_preds, test_labels)
+
+    suspicious = []
+    for i, (p, l, c) in enumerate(zip(test_preds, test_labels, test_confs)):
+        if p != l:
+            suspicious.append((i, l, p, c))
+    suspicious.sort(key=lambda x: -x[3])
+
+    return TrainResult(
+        val_acc=val_acc,
+        test_avg_acc=test_acc,
+        worst_group_acc=worst_group,
+        group_accs=group_accs,
+        confusion_matrix=cm,
+        history=history,
+        model=model,
+        suspicious=suspicious[:20],
     )
+
 
 
 def _init_state ():
@@ -559,9 +597,9 @@ def main ():
             }.get ,
             index =0 ,key ="loss_name",
             )
-            st .caption (
-            "Group-reweighted CE uses group labels (shortcut present/absent) "
-            "to up-weight rare groups (shortcut-absent), forcing the model to learn real features (group-reweighted ERM)."
+            st.caption(
+                "Group-reweighted CE uses group labels to up-weight rare shortcut-absent groups, "
+                "forcing the model to learn real features (group-reweighted ERM)."
             )
 
         with tc3 :
@@ -654,7 +692,7 @@ def main ():
         {"Concept":"Transfer Learning",
         "How it appears":"ResNet18 (ImageNet weights) -- backbone reused, only head replaced by default."},
         {"Concept":"Data Augmentation",
-        "How it appears":"Group-reweighted loss is the effective lever; data augmentation did not help at the tested strengths as residual cues remain exploited."},
+        "How it appears":"Group-reweighted loss is the effective lever; standard augmentation did not help at tested strengths."},
         {"Concept":"Loss Functions",
         "How it appears":"Group-reweighted CE directly penalises failures on shortcut-absent groups."},
         {"Concept":"Metrics",

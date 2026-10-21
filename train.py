@@ -419,22 +419,24 @@ base_model :Optional [nn .Module ]=None ,
     )
 
 
-def train_baseline (
-level :int ,
-train_ds :ShortcutDataset ,
-val_ds :ShortcutDataset ,
-test_ds :ShortcutDataset ,
-progress_cb =None ,
-)->TrainResult :
+def train_baseline(
+    level: int,
+    train_ds: ShortcutDataset,
+    val_ds: ShortcutDataset,
+    test_ds: ShortcutDataset,
+    progress_cb=None,
+) -> TrainResult:
     """
     Train the 'no fixes' baseline model:
-      head_only, Adam, 3 epochs, plain CE, no augmentation.
+      head_only, Adam, 2 epochs, plain CE, no augmentation (seed 42).
     """
-    cfg =TrainConfig (
-    finetune_mode ="head_only",
-    optimizer ="adam",
-    learning_rate =1e-3 ,
-    epochs =3 ,
-    loss_fn_name ="cross_entropy",
+    cfg = TrainConfig(
+        finetune_mode="head_only",
+        optimizer="adam",
+        learning_rate=1e-3,
+        epochs=2,
+        loss_fn_name="cross_entropy",
+        seed=42,
     )
-    return run_training (cfg ,train_ds ,val_ds ,test_ds ,progress_cb )
+    return run_training(cfg, train_ds, val_ds, test_ds, progress_cb)
+
