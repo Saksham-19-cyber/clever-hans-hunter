@@ -103,7 +103,7 @@ def _fig_to_img (fig ):
     return buf .read ()
 
 
-@st.cache_resource(show_spinner="Preparing Clever Hans dataset (downloads CIFAR-10 on first startup)...")
+@st.cache_resource(max_entries=1, show_spinner="Preparing Clever Hans dataset (downloads CIFAR-10 on first startup)...")
 def cached_datasets(level: int):
     try:
         CACHE_DIR.mkdir(exist_ok=True)
@@ -138,7 +138,7 @@ def compute_test_fingerprint(test_ds) -> str:
     return h.hexdigest()
 
 
-@st.cache_resource(show_spinner="Evaluating baseline on current test set...")
+@st.cache_resource(max_entries=1, show_spinner="Evaluating baseline on current test set...")
 def cached_baseline(level: int):
     tr, va, te = cached_datasets(level)
     cur_fp = compute_test_fingerprint(te)
@@ -260,7 +260,14 @@ def cached_baseline(level: int):
         except Exception:
             pass
 
-    return TrainResult(
+    load_status = (
+        "retrained at startup (fingerprint mismatch)"
+        if needs_retrain
+        else "loaded from checkpoint (fingerprint match)"
+    )
+    print(f"[cached_baseline] Level {level}: {load_status} | fingerprint: {cur_fp}")
+
+    result = TrainResult(
         val_acc=val_acc,
         test_avg_acc=test_acc,
         worst_group_acc=worst_group,
@@ -270,6 +277,9 @@ def cached_baseline(level: int):
         model=model,
         suspicious=suspicious[:20],
     )
+    result.load_status = load_status
+    result.fingerprint = cur_fp
+    return result
 
 
 
@@ -517,6 +527,7 @@ def main ():
             "<div class='mlbl'>Your Worst-Group</div></div>",
             unsafe_allow_html =True )
 
+    st.caption(f"Baseline: {baseline.load_status} • Fingerprint: `{baseline.fingerprint}`")
     st .markdown ("")
 
     flash =st .session_state .pop ("flash_message",None )
